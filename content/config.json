@@ -1,0 +1,23 @@
+{
+  "thresholds": {
+    "answer": 0.6,
+    "clarify": 0.3,
+    "scopeMin": 0.1,
+    "scopeMargin": 0.05,
+    "dominanceGap": 0.2
+  },
+  "scoring": {
+    "scopeBoost": 0.25,
+    "prefixMinLength": 4
+  },
+  "menu": {
+    "maxOptions": 3
+  },
+  "support": {
+    "url": "support.cryptopro.ru"
+  },
+  "logging": {
+    "unanswered": false,
+    "path": "logs/unanswered.jsonl"
+  }
+}
