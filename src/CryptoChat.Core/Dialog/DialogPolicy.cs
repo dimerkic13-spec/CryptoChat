@@ -4,7 +4,12 @@ using CryptoChat.Core.Retrieval;
 
 namespace CryptoChat.Core.Dialog;
 
-/// <summary>Решает по результату поиска: ответить, уточнить, спросить про продукт или передать в поддержку.</summary>
+/// <summary>
+/// Решает по результату поиска: ответить, показать подходящие вопросы, уточнить тему,
+/// спросить про продукт или передать в поддержку.
+/// В обычном режиме при слабом результате бот сразу направляет в поддержку.
+/// В режиме dialog.guided вместо этого он уточняет тему по веткам дерева.
+/// </summary>
 public sealed class DialogPolicy : IDialogPolicy
 {
     private static readonly IReadOnlyList<Candidate> NoCandidates = Array.Empty<Candidate>();
@@ -22,20 +27,29 @@ public sealed class DialogPolicy : IDialogPolicy
     public DialogDecision Decide(RetrievalResult result)
     {
         var t = _config.Thresholds;
+        var guided = _config.Dialog.Guided;
+        var max = _config.Menu.MaxOptions;
 
         if (result.Lemmas.Count == 0)
             return new DialogDecision(DecisionKind.NotUnderstood, NoCandidates, NoProducts);
 
         var candidates = result.Candidates;
         if (candidates.Count == 0 || candidates[0].Score < t.Clarify)
-            return new DialogDecision(DecisionKind.Escalate, NoCandidates, NoProducts);
+        {
+            return guided
+                ? new DialogDecision(DecisionKind.ClarifyBranch, candidates, NoProducts)
+                : new DialogDecision(DecisionKind.Escalate, NoCandidates, NoProducts);
+        }
 
         var top = candidates[0].Score;
         List<Candidate> options;
 
         if (top < t.Answer)
         {
-            options = candidates.Where(c => c.Score >= t.Clarify).Take(_config.Menu.MaxOptions).ToList();
+            var fits = candidates.Where(c => c.Score >= t.Clarify).ToList();
+            if (guided && fits.Count > max)
+                return new DialogDecision(DecisionKind.ClarifyBranch, candidates, NoProducts);
+            options = fits.Take(max).ToList();
         }
         else
         {
@@ -44,7 +58,9 @@ public sealed class DialogPolicy : IDialogPolicy
             if (strong.Count == 1 || top - second >= t.DominanceGap)
                 return new DialogDecision(DecisionKind.Answer, new[] { candidates[0] }, NoProducts);
 
-            options = strong.Take(_config.Menu.MaxOptions).ToList();
+            if (guided && strong.Count > max)
+                return new DialogDecision(DecisionKind.ClarifyBranch, candidates, NoProducts);
+            options = strong.Take(max).ToList();
         }
 
         if (result.Scope == null)

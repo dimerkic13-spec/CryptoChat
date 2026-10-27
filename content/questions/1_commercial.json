@@ -639,23 +639,23 @@
       },
       {
         "word": "купить",
-        "weight": 2
+        "weight": 4.5
       },
       {
         "word": "заказ",
-        "weight": 2
+        "weight": 1
       },
       {
         "word": "юл",
-        "weight": 1
+        "weight": 0.5
       },
       {
         "word": "ип",
-        "weight": 1
+        "weight": 0.5
       },
       {
         "word": "лицензия",
-        "weight": 0.5
+        "weight": 1.5
       }
     ]
   },
@@ -1410,43 +1410,35 @@
     "keywords": [
       {
         "word": "пин",
-        "weight": 8
+        "weight": 10
+      },
+      {
+        "word": "код",
+        "weight": 3
       },
       {
         "word": "рутокен",
-        "weight": 8
+        "weight": 6
       },
       {
         "word": "пароль",
-        "weight": 4
+        "weight": 3
       },
       {
         "word": "забыл",
         "weight": 2
       },
       {
-        "word": "код",
+        "word": "носитель",
         "weight": 2
       },
       {
-        "word": "носитель",
-        "weight": 3
-      },
-      {
-        "word": "етокен",
-        "weight": 1
-      },
-      {
-        "word": "etoken",
-        "weight": 1
-      },
-      {
-        "word": "jacarta",
+        "word": "взять",
         "weight": 1
       },
       {
         "word": "лицензия",
-        "weight": 0.5
+        "weight": 1
       }
     ]
   },

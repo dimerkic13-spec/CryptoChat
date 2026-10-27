@@ -5,7 +5,7 @@ using CryptoChat.Core.Models;
 namespace CryptoChat.Cli;
 
 /// <summary>
-/// Необязательный журнал вопросов, на которые бот не ответил (config.json → logging.unanswered).
+/// Необязательный журнал вопросов, на которые бот не смог сразу ответить: он уточнял тему или направил в поддержку (config.json → logging.unanswered).
 /// По нему видно, какие вопросы стоит добавить в базу. Ошибки записи игнорируются.
 /// </summary>
 internal sealed class UnansweredLog
@@ -28,7 +28,7 @@ internal sealed class UnansweredLog
 
     public void Write(string query, ReplyKind kind)
     {
-        if (_path == null || kind is not (ReplyKind.Escalate or ReplyKind.NotUnderstood))
+        if (_path == null || kind is not (ReplyKind.Escalate or ReplyKind.NotUnderstood or ReplyKind.ClarifyBranch))
             return;
 
         try

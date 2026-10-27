@@ -17,7 +17,9 @@ public sealed class ScopeResolver
     public ScopeResolver(KnowledgeBase knowledgeBase, AppConfig config)
     {
         _config = config;
-        _categoriesWithKeywords = knowledgeBase.Categories.Values.Where(c => c.Keywords.Count > 0).ToList();
+        _categoriesWithKeywords = knowledgeBase.Categories.Values
+            .Where(c => c.Keywords.Count > 0 && (config.Scoring.CategoryScope || c.Kind == "product"))
+            .ToList();
     }
 
     public ScopeResult Resolve(IReadOnlyList<string> lemmas)

@@ -21,6 +21,11 @@ public sealed class ChatEngine
     private readonly ChatSession _session = new();
 
     public bool DebugEnabled { get; set; }
+
+    /// <summary>Вызывается, когда пользователь оценил ответ словом «да» или «нет».</summary>
+    public event Action<FeedbackEntry>? FeedbackGiven;
+
+    private bool Guided => _config.Dialog.Guided;
     public KnowledgeBase KnowledgeBase => _kb;
     public AppConfig Config => _config;
 
@@ -57,7 +62,7 @@ public sealed class ChatEngine
         var lower = text.ToLowerInvariant();
         if (lower is "выход" or "exit" or "quit" or "/выход" or "/exit" or "/quit")
         {
-            _session.Reset();
+            _session.ResetAll();
             return Simple(ReplyKind.Exit, "До свидания!");
         }
 
@@ -72,7 +77,7 @@ public sealed class ChatEngine
         {
             if (number == 0)
             {
-                _session.Reset();
+                _session.ResetAll();
                 return EscalateReply(null, null);
             }
             if (number >= 1 && number <= pending.Options.Count)
@@ -82,10 +87,66 @@ public sealed class ChatEngine
             }
         }
 
+        if (pending?.FeedbackQuestionId != null && TryParseFeedback(lower, out var helpful))
+            return HandleFeedback(pending, helpful);
+
         // Любой другой ввод в режиме ожидания выбора считается новым вопросом.
         _session.Reset();
         var lemmas = _text.Lemmatize(text);
-        return Respond(_retriever.Search(lemmas));
+        return Respond(_retriever.Search(lemmas), null, text);
+    }
+
+    // ---------- Отзыв об ответе ----------
+
+    private static bool TryParseFeedback(string lower, out bool helpful)
+    {
+        switch (lower)
+        {
+            case "да":
+            case "+":
+            case "помог":
+            case "помогло":
+                helpful = true;
+                return true;
+            case "нет":
+            case "-":
+            case "не помог":
+            case "не помогло":
+                helpful = false;
+                return true;
+            default:
+                helpful = false;
+                return false;
+        }
+    }
+
+    private ChatReply HandleFeedback(PendingChoice pending, bool helpful)
+    {
+        FeedbackGiven?.Invoke(new FeedbackEntry(
+            DateTime.Now, pending.Query ?? "", pending.FeedbackQuestionId!, helpful));
+
+        if (helpful)
+        {
+            _session.Reset();
+            return Simple(ReplyKind.Feedback, "Спасибо за отзыв!");
+        }
+
+        // Ответ не помог: оставляем похожие вопросы и предлагаем переформулировать.
+        _session.Wait(pending with { FeedbackQuestionId = null });
+
+        var sb = new StringBuilder("Жаль, что ответ не помог. ");
+        if (pending.Options.Count > 0)
+        {
+            sb.Append("Возможно, поможет один из похожих вопросов (введите номер) или задайте вопрос другими словами:");
+            foreach (var o in pending.Options)
+                sb.Append('\n').Append($"  {o.Number}. {o.Label}");
+        }
+        else
+        {
+            sb.Append("Попробуйте задать вопрос другими словами.");
+        }
+        sb.Append('\n').Append("  0. Обратиться в техподдержку");
+        return new ChatReply(ReplyKind.Feedback, sb.ToString(), pending.Options);
     }
 
     // ---------- Ответ на вопрос ----------
@@ -93,15 +154,25 @@ public sealed class ChatEngine
     private ChatReply Choose(PendingChoice pending, ChatOption option)
     {
         if (option.Product != null)
-            return Respond(_retriever.Search(pending.Lemmas, option.Product));
+            return Respond(_retriever.Search(pending.Lemmas, option.Product), option.Product, pending.Query);
 
-        return AnswerReply(option.Question!, option.Score, null);
+        if (option.Branch != null)
+            return Respond(_retriever.Search(pending.Lemmas, option.Branch), option.Branch, pending.Query);
+
+        var reply = AnswerReply(option.Question!, option.Score, null);
+        if (!Guided)
+            return reply;
+
+        var others = pending.Options
+            .Where(o => o.Question != null && o.Number != option.Number)
+            .Select(o => (Question: o.Question!, o.Score));
+        return WithFeedback(reply, others, pending.Lemmas, pending.Query);
     }
 
-    private ChatReply Respond(RetrievalResult result)
+    private ChatReply Respond(RetrievalResult result, Category? node, string? query)
     {
         var decision = _policy.Decide(result);
-        var debug = DebugEnabled ? BuildDebug(result) : null;
+        var debug = DebugEnabled ? BuildDebug(result, _session.Steps) : null;
 
         switch (decision.Kind)
         {
@@ -109,17 +180,29 @@ public sealed class ChatEngine
                 return Simple(ReplyKind.NotUnderstood, "Не понял вопрос. Попробуйте переформулировать.", debug);
 
             case DecisionKind.Escalate:
+                _session.ResetAll();
                 return EscalateReply(result.Scope, debug);
 
             case DecisionKind.Answer:
-                return AnswerReply(decision.Candidates[0].Question, decision.Candidates[0].Score, debug);
+            {
+                var best = decision.Candidates[0];
+                var reply = AnswerReply(best.Question, best.Score, debug);
+                if (!Guided)
+                    return reply;
+
+                var others = result.Candidates
+                    .Skip(1)
+                    .Where(c => c.Score >= _config.Dialog.MinScore)
+                    .Select(c => (c.Question, c.Score));
+                return WithFeedback(reply, others, result.Lemmas, query);
+            }
 
             case DecisionKind.ClarifyProduct:
             {
                 var options = decision.Products
                     .Select((p, i) => new ChatOption(i + 1, p.Name, 0, null, p))
                     .ToList();
-                _session.Wait(new PendingChoice(ReplyKind.ClarifyProduct, options, result.Lemmas));
+                _session.Wait(new PendingChoice(ReplyKind.ClarifyProduct, options, result.Lemmas, null, query));
 
                 var sb = new StringBuilder("О каком продукте вы спрашиваете?");
                 foreach (var o in options)
@@ -131,10 +214,25 @@ public sealed class ChatEngine
 
             default:
             {
+                // Clarify или ClarifyBranch. В управляемом диалоге бот уточняет несколько раз,
+                // и только потом направляет в поддержку.
+                if (Guided)
+                {
+                    if (_session.Steps >= _config.Dialog.EscalateAfterSteps)
+                    {
+                        _session.ResetAll();
+                        return EscalateReply(result.Scope ?? node, debug);
+                    }
+                    _session.NextStep();
+                }
+
+                if (decision.Kind == DecisionKind.ClarifyBranch)
+                    return BranchReply(node ?? result.Scope, result, query, debug);
+
                 var options = decision.Candidates
                     .Select((c, i) => new ChatOption(i + 1, c.Question.Title, c.Score, c.Question, null))
                     .ToList();
-                _session.Wait(new PendingChoice(ReplyKind.Clarify, options, result.Lemmas));
+                _session.Wait(new PendingChoice(ReplyKind.Clarify, options, result.Lemmas, null, query));
 
                 var sb = new StringBuilder();
                 if (options.Count == 1)
@@ -154,6 +252,123 @@ public sealed class ChatEngine
                 return new ChatReply(ReplyKind.Clarify, sb.ToString(), options, debug);
             }
         }
+    }
+
+    // ---------- Уточнение по веткам дерева ----------
+
+    /// <summary>
+    /// Предлагает выбрать тему (или блок), а на последнем уровне — конкретный вопрос.
+    /// Ветки с единственным вложенным разделом пропускаются.
+    /// </summary>
+    private ChatReply BranchReply(Category? node, RetrievalResult result, string? query, string? debug)
+    {
+        var lemmas = result.Lemmas;
+        var prefix = _config.Scoring.PrefixMinLength;
+        var max = _config.Dialog.MaxBranchOptions;
+
+        var children = ChildrenWithQuestions(node);
+        while (children.Count == 1)
+        {
+            node = children[0];
+            children = ChildrenWithQuestions(node);
+        }
+
+        if (children.Count == 0)
+        {
+            var pool = node == null ? _kb.Questions : _kb.QuestionsUnder(node.Id);
+            var ranked = pool
+                .Where(q => q.IsActive)
+                .Select(q => (Question: q, Score: Scorer.Evaluate(q.Keywords, lemmas, prefix).Score))
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => x.Question.Id, IdComparer.Instance)
+                .Take(max)
+                .ToList();
+            var questionOptions = ranked
+                .Select((x, i) => new ChatOption(i + 1, x.Question.Title, x.Score, x.Question, null))
+                .ToList();
+            _session.Wait(new PendingChoice(ReplyKind.ClarifyBranch, questionOptions, lemmas, null, query));
+
+            var sb = new StringBuilder(node == null
+                ? "Выберите подходящий вопрос:"
+                : $"В разделе «{node.Name}» есть такие вопросы. Выберите подходящий:");
+            foreach (var o in questionOptions)
+                sb.Append('\n').Append($"  {o.Number}. {o.Label}");
+            sb.Append('\n').Append("  0. Ничего не подходит — обратиться в техподдержку");
+            sb.Append('\n').Append("Введите номер:");
+            return new ChatReply(ReplyKind.ClarifyBranch, sb.ToString(), questionOptions, debug);
+        }
+
+        var branchOptions = children
+            .Select(c => (Category: c, Score: BranchScore(c, lemmas)))
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Category.Id, IdComparer.Instance)
+            .Take(max)
+            .Select((x, i) => new ChatOption(i + 1, x.Category.Name, x.Score, null, null, x.Category))
+            .ToList();
+        _session.Wait(new PendingChoice(ReplyKind.ClarifyBranch, branchOptions, lemmas, null, query));
+
+        var text = new StringBuilder(node == null
+            ? "Уточните, к какой теме относится ваш вопрос:"
+            : $"Уточните, к какой теме относится ваш вопрос ({node.Name}):");
+        foreach (var o in branchOptions)
+            text.Append('\n').Append($"  {o.Number}. {o.Label}");
+        text.Append('\n').Append("  0. Ничего не подходит — обратиться в техподдержку");
+        text.Append('\n').Append("Введите номер:");
+        return new ChatReply(ReplyKind.ClarifyBranch, text.ToString(), branchOptions, debug);
+    }
+
+    private List<Category> ChildrenWithQuestions(Category? node)
+    {
+        IEnumerable<Category> children = node == null ? _kb.Roots : node.Children;
+        return children.Where(c => _kb.QuestionsUnder(c.Id).Any(q => q.IsActive)).ToList();
+    }
+
+    /// <summary>Оценка ветки: лучшее из ключей самой ветки и ключей её вопросов.</summary>
+    private double BranchScore(Category category, IReadOnlyList<string> lemmas)
+    {
+        var prefix = _config.Scoring.PrefixMinLength;
+        var best = _kb.QuestionsUnder(category.Id)
+            .Where(q => q.IsActive)
+            .Select(q => Scorer.Evaluate(q.Keywords, lemmas, prefix).Score)
+            .DefaultIfEmpty(0.0)
+            .Max();
+        var own = category.Keywords.Count > 0
+            ? Scorer.Evaluate(category.Keywords, lemmas, prefix).Score
+            : 0.0;
+        return Math.Max(best, own);
+    }
+
+    // ---------- Ответ с похожими вопросами и отзывом ----------
+
+    /// <summary>Добавляет под ответом похожие вопросы, просьбу оценить ответ и пункт «0. Техподдержка».</summary>
+    private ChatReply WithFeedback(
+        ChatReply reply,
+        IEnumerable<(Question Question, double Score)> others,
+        IReadOnlyList<string> lemmas,
+        string? query)
+    {
+        var options = others
+            .Take(_config.Menu.MaxOptions)
+            .Select((x, i) => new ChatOption(i + 1, x.Question.Title, x.Score, x.Question, null))
+            .ToList();
+
+        var feedbackId = _config.Dialog.Feedback ? reply.Question!.Id : null;
+        _session.Wait(new PendingChoice(ReplyKind.Clarify, options, lemmas, feedbackId, query));
+        _session.ResetSteps();
+
+        var sb = new StringBuilder(reply.Text).Append("\n\n");
+        if (options.Count > 0)
+        {
+            sb.Append("Не то, что искали? Похожие вопросы:");
+            foreach (var o in options)
+                sb.Append('\n').Append($"  {o.Number}. {o.Label}");
+            sb.Append('\n');
+        }
+        if (_config.Dialog.Feedback)
+            sb.Append("Ответ помог? Напишите «да» или «нет».").Append('\n');
+        sb.Append("  0. Обратиться в техподдержку").Append('\n');
+        sb.Append("Введите номер или задайте новый вопрос:");
+        return reply with { Text = sb.ToString(), Options = options };
     }
 
     private ChatReply AnswerReply(Question question, double score, string? debug)
@@ -263,7 +478,7 @@ public sealed class ChatEngine
 
     private static string Fmt(double value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
-    private static string BuildDebug(RetrievalResult result)
+    private static string BuildDebug(RetrievalResult result, int steps)
     {
         var sb = new StringBuilder();
         sb.Append($"--- леммы: [{string.Join(", ", result.Lemmas)}]");
@@ -272,6 +487,7 @@ public sealed class ChatEngine
             : $"--- область: {result.Scope.Id} {result.Scope.Name} (score {Fmt(result.ScopeScore)})");
         foreach (var c in result.Candidates)
             sb.Append('\n').Append($"  {c.Question.Id} \"{c.Question.Title}\" → {Fmt(c.Score)}");
+        sb.Append('\n').Append($"--- шагов уточнения без ответа: {steps}");
         return sb.ToString();
     }
 }

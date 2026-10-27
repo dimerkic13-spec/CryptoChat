@@ -173,7 +173,7 @@
   },
   {
     "q": "абракадабра",
-    "expectKind": "Escalate"
+    "expectKind": "ClarifyBranch"
   },
   {
     "q": "как и что",

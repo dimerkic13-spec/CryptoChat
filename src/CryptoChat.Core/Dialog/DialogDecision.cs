@@ -9,6 +9,7 @@ public enum DecisionKind
     Escalate,
     Answer,
     Clarify,
+    ClarifyBranch,
     ClarifyProduct
 }
 

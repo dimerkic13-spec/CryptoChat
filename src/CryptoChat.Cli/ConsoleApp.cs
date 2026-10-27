@@ -69,6 +69,8 @@ public static class ConsoleApp
     {
         var kb = engine.KnowledgeBase;
         var log = new UnansweredLog(engine.Config);
+        var feedbackLog = new FeedbackLog(engine.Config);
+        engine.FeedbackGiven += feedbackLog.Write;
 
         Console.CancelKeyPress += (_, e) =>
         {
@@ -102,11 +104,12 @@ public static class ConsoleApp
 
             var reply = engine.Ask(input);
             Print(reply);
-            log.Write(input, reply.Kind);
+            if (!int.TryParse(input.Trim(), out _))
+                log.Write(input, reply.Kind);
 
             if (reply.Kind == ReplyKind.Exit)
                 return 0;
-            awaitingChoice = reply.Kind is ReplyKind.Clarify or ReplyKind.ClarifyProduct;
+            awaitingChoice = reply.Kind is ReplyKind.Clarify or ReplyKind.ClarifyProduct or ReplyKind.ClarifyBranch;
         }
     }
 

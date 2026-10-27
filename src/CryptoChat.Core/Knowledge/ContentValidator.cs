@@ -21,8 +21,8 @@ public static class ContentValidator
 
         void CheckKeywords(string where, List<RawKeyword> keywords, bool isQuestion)
         {
-            if (isQuestion && (keywords.Count < 3 || keywords.Count > 10))
-                Err("V006", where, $"Ключевых слов должно быть от 3 до 10, сейчас {keywords.Count}.");
+            if (isQuestion && keywords.Count < 3)
+                 Err("V006", where, $"Ключевых слов должно быть не меньше 3, сейчас {keywords.Count}.");
 
             var seenStems = new HashSet<string>();
             foreach (var k in keywords)
