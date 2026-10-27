@@ -1,1 +1,1 @@
-﻿Console.WriteLine("Hello, World!");
+return CryptoChat.Cli.ConsoleApp.Run(args);
