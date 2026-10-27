@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CryptoChat.Cli/CryptoChat.Cli.csproj" />
+    <Project Path="src/CryptoChat.Core/CryptoChat.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CryptoChat.Tests/CryptoChat.Tests.csproj" />
+  </Folder>
+</Solution>
