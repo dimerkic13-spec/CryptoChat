@@ -14,8 +14,20 @@ public sealed class SynonymMap
 
     public static SynonymMap Empty { get; } = new(Array.Empty<IReadOnlyList<string>>());
 
-    public SynonymMap(IEnumerable<IReadOnlyList<string>> groups)
+    public SynonymMap(IEnumerable<IReadOnlyList<string>> groups, ILemmatizer? lemmatizer = null)
     {
+        lemmatizer ??= StemmerLemmatizer.Instance;
+        var owner = new Dictionary<string, int>(); // основа → номер группы, в которую она уже входит
+
+        void Claim(string lemma, int groupIndex, string word)
+        {
+            // Внутри одной группы совпадение основ допустимо («купил», «куплю» → «купить»),
+            // между разными группами — нет.
+            if (!owner.TryAdd(lemma, groupIndex) && owner[lemma] != groupIndex)
+                throw new ArgumentException($"Слово «{word}» входит в несколько групп синонимов.");
+        }
+
+        var index = 0;
         foreach (var group in groups)
         {
             if (group.Count < 2)
@@ -24,7 +36,8 @@ public sealed class SynonymMap
             var canonical = Normalizer.Normalize(group[0]).Trim();
             if (canonical.Contains(' '))
                 throw new ArgumentException($"Каноническое слово группы должно быть одним словом: «{canonical}».");
-            var canonicalLemma = Stemmer.Stem(canonical);
+            var canonicalLemma = lemmatizer.Lemmatize(canonical);
+            Claim(canonicalLemma, index, canonical);
 
             for (int i = 1; i < group.Count; i++)
             {
@@ -35,14 +48,15 @@ public sealed class SynonymMap
                         @"(?<![\p{L}\p{N}])" + Regex.Escape(member) + @"(?![\p{L}\p{N}])",
                         RegexOptions.Compiled);
                     _phrases.Add((pattern, canonical));
+                    continue;
                 }
-                else
-                {
-                    var memberLemma = Stemmer.Stem(member);
-                    if (!_lemmaMap.TryAdd(memberLemma, canonicalLemma))
-                        throw new InvalidOperationException($"Слово «{member}» входит в несколько групп синонимов.");
-                }
+
+                var memberLemma = lemmatizer.Lemmatize(member);
+                Claim(memberLemma, index, member);
+                if (memberLemma != canonicalLemma)
+                    _lemmaMap[memberLemma] = canonicalLemma;
             }
+            index++;
         }
     }
 

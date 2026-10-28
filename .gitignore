@@ -484,3 +484,9 @@ publish/
 
 publish/
 logs/
+
+# CryptoChat: пароль почты — никогда не в Git
+secrets.json
+# Модель для поиска по смыслу и выгрузка для настройки
+models/
+semantic_dump.json

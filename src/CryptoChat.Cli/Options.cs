@@ -6,7 +6,12 @@ internal sealed class Options
     public string? ContentPath { get; private set; }
     public bool Validate { get; private set; }
     public bool SelfTest { get; private set; }
+    public bool Compare { get; private set; }
+    public string? Morphology { get; private set; }
     public bool Debug { get; private set; }
+    public bool TestEmail { get; private set; }
+    public bool SendPending { get; private set; }
+    public bool Stats { get; private set; }
     public bool ShowVersion { get; private set; }
     public bool ShowHelp { get; private set; }
     public string? Error { get; private set; }
@@ -24,9 +29,19 @@ internal sealed class Options
                     else
                         options.ContentPath = args[++i];
                     break;
+                case "--morphology":
+                    if (i + 1 >= args.Length)
+                        options.Error = "После --morphology нужно указать stemmer, pymorphy3 или auto.";
+                    else
+                        options.Morphology = args[++i].ToLowerInvariant();
+                    break;
                 case "--validate": options.Validate = true; break;
                 case "--selftest": options.SelfTest = true; break;
+                case "--compare": options.Compare = true; break;
                 case "--debug": options.Debug = true; break;
+                case "--test-email": options.TestEmail = true; break;
+                case "--send-pending": options.SendPending = true; break;
+                case "--stats": options.Stats = true; break;
                 case "--version": options.ShowVersion = true; break;
                 case "--help":
                 case "-h":

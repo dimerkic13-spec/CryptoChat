@@ -10,35 +10,36 @@ namespace CryptoChat.Cli;
 /// </summary>
 internal sealed class UnansweredLog
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     private readonly string? _path;
+    private readonly string? _session;
 
-    public UnansweredLog(AppConfig config)
+    public UnansweredLog(AppConfig config, string? sessionId = null)
     {
-        if (!config.Logging.Unanswered)
-            return;
-
-        var path = config.Logging.Path;
-        _path = Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
+        _session = sessionId;
+        if (config.Logging.Unanswered)
+            _path = ConsoleApp.LogPath(config.Logging.Path);
     }
 
     public void Write(string query, ReplyKind kind)
     {
-        if (_path == null || kind is not (ReplyKind.Escalate or ReplyKind.NotUnderstood or ReplyKind.ClarifyBranch))
+        if (_path == null || !ChatDatabase.UnansweredKinds.Contains(kind))
             return;
+        AppendJson(_path, new { time = DateTime.Now.ToString("s"), session = _session, query, kind = kind.ToString() });
+    }
 
+    internal static void AppendJson(string path, object record)
+    {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var line = JsonSerializer.Serialize(
-                new { time = DateTime.Now.ToString("s"), query, kind = kind.ToString() }, JsonOptions);
-            File.AppendAllText(_path, line + Environment.NewLine);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Журнал не должен ломать диалог.
         }

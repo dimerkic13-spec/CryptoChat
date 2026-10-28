@@ -1,5 +1,6 @@
 using CryptoChat.Core.Knowledge;
 using CryptoChat.Core.Models;
+using CryptoChat.Core.Text;
 
 namespace CryptoChat.Core.Retrieval;
 
@@ -12,14 +13,19 @@ public sealed class KeywordRetriever : IRetriever
     private readonly AppConfig _config;
     private readonly ScopeResolver _scopeResolver;
 
-    public KeywordRetriever(KnowledgeBase kb, AppConfig config)
+    /// <summary>Учёт опечаток (null — выключен).</summary>
+    public FuzzyMatcher? Fuzzy { get; }
+
+    /// <param name="fuzzy">Учёт опечаток. Если не передан, создаётся по config.json → fuzzy.</param>
+    public KeywordRetriever(KnowledgeBase kb, AppConfig config, FuzzyMatcher? fuzzy = null)
     {
         _kb = kb;
         _config = config;
-        _scopeResolver = new ScopeResolver(kb, config);
+        Fuzzy = fuzzy ?? FuzzyMatcher.FromConfig(config.Fuzzy);
+        _scopeResolver = new ScopeResolver(kb, config, Fuzzy);
     }
 
-    public RetrievalResult Search(IReadOnlyList<string> lemmas, Category? forcedScope = null)
+    public RetrievalResult Search(IReadOnlyList<string> lemmas, Category? forcedScope = null, string? query = null)
     {
         if (lemmas.Count == 0)
             return new RetrievalResult(lemmas, null, 0, Array.Empty<Candidate>());
@@ -52,13 +58,15 @@ public sealed class KeywordRetriever : IRetriever
 
     private List<Candidate> Rank(IEnumerable<Question> pool, IReadOnlyList<string> lemmas, double boost)
     {
-        var scored = new List<(Question Question, double Score, int Matched)>();
+        var scored = new List<(Question Question, double Score, int Matched, double KeywordScore)>();
         foreach (var question in pool.Where(q => q.IsActive))
         {
-            var (score, matched) = Scorer.Evaluate(question.Keywords, lemmas, _config.Scoring.PrefixMinLength);
+            var (keywordScore, matched) = Scorer.Evaluate(
+                question.Keywords, lemmas, _config.Scoring.PrefixMinLength, Fuzzy);
+            var score = keywordScore;
             if (score <= 0) continue;
             var final = boost > 0 ? Math.Min(1.0, score * (1 + boost)) : score;
-            scored.Add((question, final, matched));
+            scored.Add((question, final, matched, keywordScore));
         }
 
         return scored
@@ -66,7 +74,7 @@ public sealed class KeywordRetriever : IRetriever
             .ThenByDescending(x => x.Matched)
             .ThenBy(x => x.Question.Id, IdComparer.Instance)
             .Take(MaxCandidates)
-            .Select(x => new Candidate(x.Question, x.Score))
+            .Select(x => new Candidate(x.Question, x.Score, x.KeywordScore))
             .ToList();
     }
 }

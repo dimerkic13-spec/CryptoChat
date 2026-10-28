@@ -12,6 +12,9 @@ namespace CryptoChat.Core;
 /// <summary>Единственная точка входа: Ask(текст) → ChatReply. Консоль и будущие интерфейсы только вызывают её.</summary>
 public sealed class ChatEngine
 {
+    public static readonly IReadOnlySet<string> ExitWords =
+        new HashSet<string> { "выход", "exit", "quit", "/выход", "/exit", "/quit" };
+
     private readonly KnowledgeBase _kb;
     private readonly AppConfig _config;
     private readonly ITextProcessor _text;
@@ -25,9 +28,22 @@ public sealed class ChatEngine
     /// <summary>Вызывается, когда пользователь оценил ответ словом «да» или «нет».</summary>
     public event Action<FeedbackEntry>? FeedbackGiven;
 
+    /// <summary>Учёт опечаток для поиска вопросов и для меню уточнения по веткам (null — выключен).</summary>
+    public FuzzyMatcher? Fuzzy { get; }
+
+    /// <summary>Чем приводятся слова к основе: «стеммер» или «pymorphy3».</summary>
+    public string Morphology => _kb.Lemmatizer.Name;
+
+    /// <summary>Почему выбран такой способ (например, «словари морфологии не найдены»).</summary>
+    public string? MorphologyNote { get; set; }
+
+    /// <summary>Номер сессии задаёт консоль (или другой интерфейс); показывается по команде /сессия.</summary>
+    public string? SessionId { get; set; }
+
     private bool Guided => _config.Dialog.Guided;
     public KnowledgeBase KnowledgeBase => _kb;
     public AppConfig Config => _config;
+    public ITextProcessor Text => _text;
 
     public ChatEngine(
         KnowledgeBase kb,
@@ -39,18 +55,43 @@ public sealed class ChatEngine
     {
         _kb = kb;
         _config = config;
-        _text = text ?? new TextProcessor(synonyms: kb.Synonyms);
-        _retriever = retriever ?? new KeywordRetriever(kb, config);
+        _text = text ?? new TextProcessor(synonyms: kb.Synonyms, lemmatizer: kb.Lemmatizer);
+        // Один и тот же учёт опечаток для поиска вопросов и для меню уточнения по веткам.
+        Fuzzy = retriever is KeywordRetriever keywordRetriever
+            ? keywordRetriever.Fuzzy
+            : retriever == null ? FuzzyMatcher.FromConfig(config.Fuzzy) : null;
+        _retriever = retriever ?? new KeywordRetriever(kb, config, Fuzzy);
         _policy = policy ?? new DialogPolicy(config, kb);
         _composer = composer ?? new TemplateComposer();
     }
 
-    /// <summary>Загружает и проверяет каталог content/ и создаёт готовый движок.</summary>
-    public static ChatEngine Create(string contentDirectory)
+    /// <summary>
+    /// Загружает и проверяет каталог content/ и создаёт готовый движок.
+    /// morphology переопределяет text.morphology из config.json (нужно для сравнения режимов).
+    /// </summary>
+    public static ChatEngine Create(string contentDirectory, string? morphology = null)
     {
-        var kb = KnowledgeLoader.Load(contentDirectory);
         var config = AppConfig.Load(contentDirectory);
-        return new ChatEngine(kb, config);
+        var (lemmatizer, note) = CreateLemmatizer(morphology ?? config.Text.Morphology);
+        var kb = KnowledgeLoader.Load(contentDirectory, lemmatizer);
+        return new ChatEngine(kb, config) { MorphologyNote = note };
+    }
+
+    /// <summary>Lemmatizers.Create, но с понятной ошибкой ContentException, если морфология нужна, а словарей нет.</summary>
+    public static (ILemmatizer Lemmatizer, string? Note) CreateLemmatizer(string mode)
+    {
+        try
+        {
+            return Lemmatizers.Create(mode);
+        }
+        catch (MorphologyUnavailableException ex)
+        {
+            throw new ContentException($"{ex.Message} Или поставьте в config.json \"text\": {{\"morphology\": \"auto\"}}.", ex);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ContentException(ex.Message, ex);
+        }
     }
 
     public ChatReply Ask(string? userInput)
@@ -60,7 +101,7 @@ public sealed class ChatEngine
             return Simple(ReplyKind.NotUnderstood, "Введите вопрос или команду /помощь.");
 
         var lower = text.ToLowerInvariant();
-        if (lower is "выход" or "exit" or "quit" or "/выход" or "/exit" or "/quit")
+        if (ExitWords.Contains(lower))
         {
             _session.ResetAll();
             return Simple(ReplyKind.Exit, "До свидания!");
@@ -73,7 +114,7 @@ public sealed class ChatEngine
         }
 
         var pending = _session.Pending;
-        if (pending != null && int.TryParse(text, out var number))
+        if (pending != null && int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number))
         {
             if (number == 0)
             {
@@ -93,7 +134,7 @@ public sealed class ChatEngine
         // Любой другой ввод в режиме ожидания выбора считается новым вопросом.
         _session.Reset();
         var lemmas = _text.Lemmatize(text);
-        return Respond(_retriever.Search(lemmas), null, text);
+        return Respond(_retriever.Search(lemmas, query: text), null, text);
     }
 
     // ---------- Отзыв об ответе ----------
@@ -153,11 +194,15 @@ public sealed class ChatEngine
 
     private ChatReply Choose(PendingChoice pending, ChatOption option)
     {
+        // Выбор продукта или ветки — это навигация по меню, а не неудачная попытка:
+        // такие шаги не приближают перевод в поддержку.
         if (option.Product != null)
-            return Respond(_retriever.Search(pending.Lemmas, option.Product), option.Product, pending.Query);
+            return Respond(_retriever.Search(pending.Lemmas, option.Product, pending.Query),
+                option.Product, pending.Query, fromMenu: true);
 
         if (option.Branch != null)
-            return Respond(_retriever.Search(pending.Lemmas, option.Branch), option.Branch, pending.Query);
+            return Respond(_retriever.Search(pending.Lemmas, option.Branch, pending.Query),
+                option.Branch, pending.Query, fromMenu: true);
 
         var reply = AnswerReply(option.Question!, option.Score, null);
         if (!Guided)
@@ -169,10 +214,10 @@ public sealed class ChatEngine
         return WithFeedback(reply, others, pending.Lemmas, pending.Query);
     }
 
-    private ChatReply Respond(RetrievalResult result, Category? node, string? query)
+    private ChatReply Respond(RetrievalResult result, Category? node, string? query, bool fromMenu = false)
     {
         var decision = _policy.Decide(result);
-        var debug = DebugEnabled ? BuildDebug(result, _session.Steps) : null;
+        var debug = DebugEnabled ? BuildDebug(result) : null;
 
         switch (decision.Kind)
         {
@@ -215,8 +260,8 @@ public sealed class ChatEngine
             default:
             {
                 // Clarify или ClarifyBranch. В управляемом диалоге бот уточняет несколько раз,
-                // и только потом направляет в поддержку.
-                if (Guided)
+                // и только потом направляет в поддержку. Переходы по меню тем (fromMenu) не считаются.
+                if (Guided && !fromMenu)
                 {
                     if (_session.Steps >= _config.Dialog.EscalateAfterSteps)
                     {
@@ -227,7 +272,17 @@ public sealed class ChatEngine
                 }
 
                 if (decision.Kind == DecisionKind.ClarifyBranch)
+                {
+                    // Свободный вопрос без явного совпадения: сначала предложить близкие варианты,
+                    // и только если их нет — меню тем. При переходе по меню тем показываем ветку целиком.
+                    if (node == null && !fromMenu)
+                    {
+                        var fallback = SuggestionMenu(result, query, debug);
+                        if (fallback != null)
+                            return fallback;
+                    }
                     return BranchReply(node ?? result.Scope, result, query, debug);
+                }
 
                 var options = decision.Candidates
                     .Select((c, i) => new ChatOption(i + 1, c.Question.Title, c.Score, c.Question, null))
@@ -254,6 +309,45 @@ public sealed class ChatEngine
         }
     }
 
+    // ---------- Похожие вопросы вместо меню тем ----------
+
+    /// <summary>
+    /// Явного совпадения нет: показать близкие варианты вместо меню тем — вопросы, которые
+    /// по ключам почти дотянули до порога (оценка не ниже dialog.suggestScore).
+    /// Возвращает null, если предложить нечего.
+    /// </summary>
+    private ChatReply? SuggestionMenu(RetrievalResult result, string? query, string? debug)
+    {
+        if (result.Lemmas.Count == 0)
+            return null;
+
+        var pool = _kb.Questions.Where(q => q.IsActive).ToDictionary(q => q.Id);
+        var chosen = new List<(string Id, double Score)>();
+
+        var threshold = _config.Dialog.SuggestScore;
+        foreach (var c in result.Candidates)
+        {
+            if (threshold > 0 && c.Score >= threshold && pool.ContainsKey(c.Question.Id))
+                chosen.Add((c.Question.Id, c.Score));
+        }
+
+        chosen = chosen.Take(_config.Menu.MaxOptions).ToList();
+        if (chosen.Count == 0)
+            return null;
+
+        var options = chosen
+            .Select((x, i) => new ChatOption(i + 1, pool[x.Id].Title, x.Score, pool[x.Id], null))
+            .ToList();
+        _session.Wait(new PendingChoice(ReplyKind.Clarify, options, result.Lemmas, null, query));
+
+        var sb = new StringBuilder("Точного совпадения не нашёл. Возможно, вы имели в виду:");
+        foreach (var o in options)
+            sb.Append('\n').Append($"  {o.Number}. {o.Label}");
+        sb.Append('\n').Append("  0. Ничего не подходит — обратиться в техподдержку");
+        sb.Append('\n').Append("Введите номер:");
+        return new ChatReply(ReplyKind.Clarify, sb.ToString(), options, debug);
+    }
+
     // ---------- Уточнение по веткам дерева ----------
 
     /// <summary>
@@ -278,7 +372,9 @@ public sealed class ChatEngine
             var pool = node == null ? _kb.Questions : _kb.QuestionsUnder(node.Id);
             var ranked = pool
                 .Where(q => q.IsActive)
-                .Select(q => (Question: q, Score: Scorer.Evaluate(q.Keywords, lemmas, prefix).Score))
+                .Select(q => (Question: q, Score: Math.Max(
+                    Scorer.Evaluate(q.Keywords, lemmas, prefix, Fuzzy).Score,
+                    result.Semantic.GetValueOrDefault(q.Id))))
                 .OrderByDescending(x => x.Score)
                 .ThenBy(x => x.Question.Id, IdComparer.Instance)
                 .Take(max)
@@ -299,7 +395,7 @@ public sealed class ChatEngine
         }
 
         var branchOptions = children
-            .Select(c => (Category: c, Score: BranchScore(c, lemmas)))
+            .Select(c => (Category: c, Score: BranchScore(c, lemmas, result.Semantic)))
             .OrderByDescending(x => x.Score)
             .ThenBy(x => x.Category.Id, IdComparer.Instance)
             .Take(max)
@@ -323,17 +419,19 @@ public sealed class ChatEngine
         return children.Where(c => _kb.QuestionsUnder(c.Id).Any(q => q.IsActive)).ToList();
     }
 
-    /// <summary>Оценка ветки: лучшее из ключей самой ветки и ключей её вопросов.</summary>
-    private double BranchScore(Category category, IReadOnlyList<string> lemmas)
+    /// <summary>Оценка ветки: лучшее из ключей самой ветки, ключей её вопросов и смысловой оценки вопросов.</summary>
+    private double BranchScore(Category category, IReadOnlyList<string> lemmas,
+        IReadOnlyDictionary<string, double> semantic)
     {
         var prefix = _config.Scoring.PrefixMinLength;
         var best = _kb.QuestionsUnder(category.Id)
             .Where(q => q.IsActive)
-            .Select(q => Scorer.Evaluate(q.Keywords, lemmas, prefix).Score)
+            .Select(q => Math.Max(Scorer.Evaluate(q.Keywords, lemmas, prefix, Fuzzy).Score,
+                semantic.GetValueOrDefault(q.Id)))
             .DefaultIfEmpty(0.0)
             .Max();
         var own = category.Keywords.Count > 0
-            ? Scorer.Evaluate(category.Keywords, lemmas, prefix).Score
+            ? Scorer.Evaluate(category.Keywords, lemmas, prefix, Fuzzy).Score
             : 0.0;
         return Math.Max(best, own);
     }
@@ -352,7 +450,7 @@ public sealed class ChatEngine
             .Select((x, i) => new ChatOption(i + 1, x.Question.Title, x.Score, x.Question, null))
             .ToList();
 
-        var feedbackId = _config.Dialog.Feedback ? reply.Question!.Id : null;
+        var feedbackId = _config.Dialog.Feedback ? reply.Question?.Id : null;
         _session.Wait(new PendingChoice(ReplyKind.Clarify, options, lemmas, feedbackId, query));
         _session.ResetSteps();
 
@@ -408,12 +506,19 @@ public sealed class ChatEngine
                     "  /темы 1.2        показать вопросы раздела\n" +
                     "  /отладка вкл     показывать, как бот ищет ответ\n" +
                     "  /отладка выкл    выключить отладку\n" +
+                    "  /сессия          номер текущей беседы\n" +
                     "  /помощь          эта подсказка\n" +
                     "  выход            завершить работу");
 
             case "/темы":
             case "/topics":
                 return argument.Length == 0 ? TopicsTree() : TopicQuestions(argument);
+
+            case "/сессия":
+            case "/session":
+                return Simple(ReplyKind.Command, SessionId != null
+                    ? $"Номер сессии: {SessionId}"
+                    : "Журнал бесед выключен (config.json → sessions.enabled).");
 
             case "/отладка":
             case "/debug":
@@ -476,18 +581,30 @@ public sealed class ChatEngine
     private static ChatReply Simple(ReplyKind kind, string text, string? debug = null) =>
         new(kind, text, Array.Empty<ChatOption>(), debug);
 
-    private static string Fmt(double value) => value.ToString("0.00", CultureInfo.InvariantCulture);
+    public static string Fmt(double value) => value.ToString("F2", CultureInfo.InvariantCulture);
 
-    private static string BuildDebug(RetrievalResult result, int steps)
+    private string BuildDebug(RetrievalResult result)
     {
         var sb = new StringBuilder();
         sb.Append($"--- леммы: [{string.Join(", ", result.Lemmas)}]");
         sb.Append('\n').Append(result.Scope == null
             ? "--- область: не определена"
             : $"--- область: {result.Scope.Id} {result.Scope.Name} (score {Fmt(result.ScopeScore)})");
+
+        var prefix = _config.Scoring.PrefixMinLength;
         foreach (var c in result.Candidates)
-            sb.Append('\n').Append($"  {c.Question.Id} \"{c.Question.Title}\" → {Fmt(c.Score)}");
-        sb.Append('\n').Append($"--- шагов уточнения без ответа: {steps}");
+        {
+            var typos = Scorer.TypoMatches(c.Question.Keywords, result.Lemmas, prefix, Fuzzy);
+            var note = typos.Count > 0
+                ? "  (опечатка: " + string.Join(", ", typos.Select(t => $"{t.Lemma}≈{t.Keyword}")) + ")"
+                : "";
+            if (c.Cosine != null)
+                note += $"  [ключи {Fmt(c.KeywordScore)}, смысл: похожесть {Fmt(c.Cosine.Value)}]";
+            sb.Append('\n').Append($"  {c.Question.Id} \"{c.Question.Title}\" → {Fmt(c.Score)}{note}");
+        }
+
+        sb.Append('\n').Append($"--- шагов уточнения без ответа: {_session.Steps}; морфология: {Morphology}; " +
+                               $"опечатки: {Fuzzy?.Name ?? "выкл"}; смысл: выкл");
         return sb.ToString();
     }
 }
