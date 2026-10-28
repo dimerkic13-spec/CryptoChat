@@ -14,6 +14,8 @@ if (Test-Path publish) { Remove-Item publish -Recurse -Force }
 dotnet publish src/CryptoChat.Cli -c Release -r win-x64 --self-contained true `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o publish
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish завершился с ошибкой." }
+# Файлы .lib из пакета ONNX Runtime нужны только компилятору C++, программе они не нужны.
+Remove-Item publish\*.lib -ErrorAction SilentlyContinue
 
 Write-Host "3/4 Проверка собранной программы..."
 & .\publish\CryptoChat.exe --validate
