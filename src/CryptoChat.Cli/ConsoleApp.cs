@@ -3,6 +3,7 @@ using System.Text;
 using CryptoChat.Core;
 using CryptoChat.Core.Knowledge;
 using CryptoChat.Core.Models;
+using CryptoChat.Core.Semantic;
 
 namespace CryptoChat.Cli;
 
@@ -48,12 +49,25 @@ public static class ConsoleApp
                 return Validate(contentDir, options.Morphology);
             if (options.Compare)
                 return Compare.Run(contentDir);
+            if (options.CompareSemantic)
+                return SemanticCommands.CompareSemantic(contentDir, options.Morphology);
+            if (options.DownloadModel)
+                return SemanticCommands.DownloadModel(contentDir);
+            if (options.CheckModel)
+                return SemanticCommands.CheckModel(contentDir);
+            if (options.SemanticDump)
+                return SemanticCommands.SemanticDump(contentDir, options.Morphology);
             if (options.TestEmail || options.SendPending)
                 return EmailCommand(contentDir, options);
             if (options.Stats)
                 return Stats(contentDir);
 
-            var engine = ChatEngine.Create(contentDir, options.Morphology);
+            var semantic = AppConfig.Load(contentDir).Semantic;
+            if (semantic.Enabled && SemanticFactory.ModelExists(semantic, AppDirectory()))
+                Console.WriteLine("Загружаю модель для поиска по смыслу...");
+            var engine = ChatEngine.Create(contentDir, options.Morphology, appDir: AppDirectory());
+            if (engine.SemanticNote != null)
+                Console.WriteLine("Поиск по смыслу недоступен: " + engine.SemanticNote);
             engine.DebugEnabled = options.Debug;
 
             if (options.SelfTest)
@@ -105,7 +119,9 @@ public static class ConsoleApp
         var note = engine.MorphologyNote != null ? $" ({engine.MorphologyNote})" : "";
         Console.WriteLine($"Морфология: {engine.Morphology}{note}");
         Console.WriteLine($"Учёт опечаток: {engine.Fuzzy?.Name ?? "выключен"}");
-        Console.WriteLine("Поиск по смыслу: выключен");
+        Console.WriteLine(engine.Semantic != null
+            ? $"Поиск по смыслу: {engine.Semantic.Name} ({engine.Semantic.Phrases} фраз)"
+            : "Поиск по смыслу: выключен" + (engine.SemanticNote != null ? " (недоступен)" : ""));
         if (engine.SessionId != null)
             Console.WriteLine($"Номер сессии: {engine.SessionId}");
         Console.WriteLine(new string('=', 60));
@@ -290,6 +306,10 @@ public static class ConsoleApp
         Console.WriteLine("  --selftest         прогнать приёмочные вопросы и выйти");
         Console.WriteLine("  --compare          сравнить стеммер и pymorphy3 на приёмочных вопросах");
         Console.WriteLine("  --morphology <m>   stemmer, pymorphy3 или auto (вместо text.morphology из config.json)");
+        Console.WriteLine("  --compare-semantic сравнить поиск с моделью и без неё (контрольные запросы и перефразы)");
+        Console.WriteLine("  --check-model      проверить модель для поиска по смыслу (сверка с Python-версией)");
+        Console.WriteLine("  --download-model   как получить модель для поиска по смыслу");
+        Console.WriteLine("  --semantic-dump    выгрузить оценки модели в semantic_dump.json (для настройки порогов)");
         Console.WriteLine("  --debug            показывать, как бот ищет ответ");
         Console.WriteLine("  --test-email       отправить тестовое письмо по настройкам email из config.json");
         Console.WriteLine("  --send-pending     отправить на почту журналы, которые не ушли раньше");

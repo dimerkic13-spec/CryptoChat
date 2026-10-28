@@ -88,7 +88,7 @@ public class FuzzyEngineTests
     [Fact]
     public void RealContent_WithFuzzy_PassesAcceptance()
     {
-        var engine = ChatEngine.Create(ContentDir, "stemmer");
+        var engine = ChatEngine.Create(ContentDir, "stemmer", semantic: false);
         Assert.True(engine.Config.Fuzzy.Enabled, "в content/config.json учёт опечаток включён");
         var (failures, _, _) = SelfTest.CheckAcceptance(engine, ContentDir);
         Assert.True(failures.Count == 0, string.Join("\n", failures));
@@ -101,7 +101,7 @@ public class FuzzyEngineTests
     [InlineData("присоеденится к эдо", "1.2.4.1")]
     public void RealTypos_FindRightQuestion(string query, string expected)
     {
-        var reply = ChatEngine.Create(ContentDir, "stemmer").Ask(query);
+        var reply = ChatEngine.Create(ContentDir, "stemmer", semantic: false).Ask(query);
         Assert.Equal(expected, SelfTest.FirstQuestionId(reply));
     }
 }
@@ -110,7 +110,7 @@ public class FuzzyEngineTests
 public class SuggestionAndNavigationTests
 {
     private static readonly string ContentDir = TestSupport.FindContentDir();
-    private static ChatEngine RealEngine() => ChatEngine.Create(ContentDir, "stemmer");
+    private static ChatEngine RealEngine() => ChatEngine.Create(ContentDir, "stemmer", semantic: false);
 
     [Fact]
     public void NearMiss_IsSuggestedInsteadOfTopics()

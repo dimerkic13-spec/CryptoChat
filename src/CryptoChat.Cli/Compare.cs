@@ -8,11 +8,11 @@ internal static class Compare
 {
     public static int Run(string contentDir)
     {
-        var stemmer = ChatEngine.Create(contentDir, "stemmer");
+        var stemmer = ChatEngine.Create(contentDir, "stemmer", semantic: false);
         ChatEngine morph;
         try
         {
-            morph = ChatEngine.Create(contentDir, "pymorphy3");
+            morph = ChatEngine.Create(contentDir, "pymorphy3", semantic: false);
         }
         catch (ContentException ex)
         {

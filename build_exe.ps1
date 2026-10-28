@@ -23,4 +23,9 @@ if ($LASTEXITCODE -ne 0) { throw "Собранная программа не п�
 
 Write-Host "4/4 Готово."
 Write-Host "Папка publish: CryptoChat.exe, content (база знаний) и dicts (словари морфологии)."
+if (Test-Path publish\models) {
+    Write-Host "Модель для поиска по смыслу: publish\models."
+} else {
+    Write-Host "Модели для поиска по смыслу нет (папка models): бот работает по ключевым словам. Как получить — README, «Поиск по смыслу»."
+}
 Write-Host "Передавайте папку publish целиком (например, в zip): без content и dicts программа не запустится как надо."

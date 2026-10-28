@@ -5,6 +5,7 @@ using CryptoChat.Core.Dialog;
 using CryptoChat.Core.Knowledge;
 using CryptoChat.Core.Models;
 using CryptoChat.Core.Retrieval;
+using CryptoChat.Core.Semantic;
 using CryptoChat.Core.Text;
 
 namespace CryptoChat.Core;
@@ -31,6 +32,12 @@ public sealed class ChatEngine
     /// <summary>Учёт опечаток для поиска вопросов и для меню уточнения по веткам (null — выключен).</summary>
     public FuzzyMatcher? Fuzzy { get; }
 
+    /// <summary>Поиск по смыслу (null — выключен или недоступен; причина — в SemanticNote).</summary>
+    public SemanticIndex? Semantic { get; }
+
+    /// <summary>Почему поиск по смыслу недоступен (например, «модель не найдена»).</summary>
+    public string? SemanticNote { get; set; }
+
     /// <summary>Чем приводятся слова к основе: «стеммер» или «pymorphy3».</summary>
     public string Morphology => _kb.Lemmatizer.Name;
 
@@ -51,7 +58,8 @@ public sealed class ChatEngine
         ITextProcessor? text = null,
         IRetriever? retriever = null,
         IDialogPolicy? policy = null,
-        IAnswerComposer? composer = null)
+        IAnswerComposer? composer = null,
+        SemanticIndex? semantic = null)
     {
         _kb = kb;
         _config = config;
@@ -60,21 +68,35 @@ public sealed class ChatEngine
         Fuzzy = retriever is KeywordRetriever keywordRetriever
             ? keywordRetriever.Fuzzy
             : retriever == null ? FuzzyMatcher.FromConfig(config.Fuzzy) : null;
-        _retriever = retriever ?? new KeywordRetriever(kb, config, Fuzzy);
+        _retriever = retriever ?? new KeywordRetriever(kb, config, Fuzzy, semantic);
+        Semantic = (_retriever as KeywordRetriever)?.Semantic;
         _policy = policy ?? new DialogPolicy(config, kb);
         _composer = composer ?? new TemplateComposer();
     }
 
     /// <summary>
     /// Загружает и проверяет каталог content/ и создаёт готовый движок.
-    /// morphology переопределяет text.morphology из config.json (нужно для сравнения режимов).
+    /// morphology переопределяет text.morphology из config.json (нужно для сравнения режимов);
+    /// semantic = false выключает поиск по смыслу (тесты, сравнение), true — включает;
+    /// appDir — папка программы (от неё считается папка с моделью);
+    /// semanticIndex — готовый индекс (чтобы не загружать модель повторно).
     /// </summary>
-    public static ChatEngine Create(string contentDirectory, string? morphology = null)
+    public static ChatEngine Create(string contentDirectory, string? morphology = null, bool? semantic = null,
+        string? appDir = null, SemanticIndex? semanticIndex = null)
     {
         var config = AppConfig.Load(contentDirectory);
+        if (semantic != null)
+            config.Semantic.Enabled = semantic.Value;
         var (lemmatizer, note) = CreateLemmatizer(morphology ?? config.Text.Morphology);
         var kb = KnowledgeLoader.Load(contentDirectory, lemmatizer);
-        return new ChatEngine(kb, config) { MorphologyNote = note };
+        string? semanticNote = null;
+        if (semanticIndex == null && config.Semantic.Enabled)
+            (semanticIndex, semanticNote) = SemanticFactory.Create(config.Semantic, kb.Questions, appDir);
+        return new ChatEngine(kb, config, semantic: config.Semantic.Enabled ? semanticIndex : null)
+        {
+            MorphologyNote = note,
+            SemanticNote = semanticNote
+        };
     }
 
     /// <summary>Lemmatizers.Create, но с понятной ошибкой ContentException, если морфология нужна, а словарей нет.</summary>
@@ -312,8 +334,9 @@ public sealed class ChatEngine
     // ---------- Похожие вопросы вместо меню тем ----------
 
     /// <summary>
-    /// Явного совпадения нет: показать близкие варианты вместо меню тем — вопросы, которые
-    /// по ключам почти дотянули до порога (оценка не ниже dialog.suggestScore).
+    /// Явного совпадения нет: показать близкие варианты вместо меню тем.
+    /// Сначала — вопросы, которые по ключам почти дотянули до порога (оценка не ниже
+    /// dialog.suggestScore), затем — самые похожие по смыслу (если поиск по смыслу включён).
     /// Возвращает null, если предложить нечего.
     /// </summary>
     private ChatReply? SuggestionMenu(RetrievalResult result, string? query, string? debug)
@@ -329,6 +352,22 @@ public sealed class ChatEngine
         {
             if (threshold > 0 && c.Score >= threshold && pool.ContainsKey(c.Question.Id))
                 chosen.Add((c.Question.Id, c.Score));
+        }
+
+        // 2) похожие по смыслу
+        var cfg = _config.Semantic;
+        if (Semantic != null && cfg.MenuFallback && result.Cosines.Count > 0)
+        {
+            var cosines = result.Cosines.Where(x => pool.ContainsKey(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            if (cosines.Count > 0)
+            {
+                var z = SemanticIndex.ZScores(cosines);
+                foreach (var (id, cosine) in cosines.OrderByDescending(x => x.Value).Take(cfg.MenuSize))
+                {
+                    if (z[id] >= cfg.MenuZ && chosen.All(x => x.Id != id))
+                        chosen.Add((id, cosine));
+                }
+            }
         }
 
         chosen = chosen.Take(_config.Menu.MaxOptions).ToList();
@@ -604,7 +643,7 @@ public sealed class ChatEngine
         }
 
         sb.Append('\n').Append($"--- шагов уточнения без ответа: {_session.Steps}; морфология: {Morphology}; " +
-                               $"опечатки: {Fuzzy?.Name ?? "выкл"}; смысл: выкл");
+                               $"опечатки: {Fuzzy?.Name ?? "выкл"}; смысл: {Semantic?.Name ?? "выкл"}");
         return sb.ToString();
     }
 }

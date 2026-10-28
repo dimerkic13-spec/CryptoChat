@@ -1,5 +1,6 @@
 using CryptoChat.Core.Knowledge;
 using CryptoChat.Core.Models;
+using CryptoChat.Core.Semantic;
 using CryptoChat.Core.Text;
 
 namespace CryptoChat.Core.Retrieval;
@@ -13,14 +14,23 @@ public sealed class KeywordRetriever : IRetriever
     private readonly AppConfig _config;
     private readonly ScopeResolver _scopeResolver;
 
+    private static readonly IReadOnlyDictionary<string, double> None = new Dictionary<string, double>();
+
+    private IReadOnlyDictionary<string, double> _cosines = None;        // похожести текущего запроса
+    private IReadOnlyDictionary<string, double> _semanticScores = None; // и их перевод в оценки
+
     /// <summary>Учёт опечаток (null — выключен).</summary>
     public FuzzyMatcher? Fuzzy { get; }
 
+    /// <summary>Поиск по смыслу (null — выключен).</summary>
+    public SemanticIndex? Semantic { get; }
+
     /// <param name="fuzzy">Учёт опечаток. Если не передан, создаётся по config.json → fuzzy.</param>
-    public KeywordRetriever(KnowledgeBase kb, AppConfig config, FuzzyMatcher? fuzzy = null)
+    public KeywordRetriever(KnowledgeBase kb, AppConfig config, FuzzyMatcher? fuzzy = null, SemanticIndex? semantic = null)
     {
         _kb = kb;
         _config = config;
+        Semantic = semantic;
         Fuzzy = fuzzy ?? FuzzyMatcher.FromConfig(config.Fuzzy);
         _scopeResolver = new ScopeResolver(kb, config, Fuzzy);
     }
@@ -29,6 +39,14 @@ public sealed class KeywordRetriever : IRetriever
     {
         if (lemmas.Count == 0)
             return new RetrievalResult(lemmas, null, 0, Array.Empty<Candidate>());
+
+        _cosines = None;
+        _semanticScores = None;
+        if (Semantic != null && !string.IsNullOrEmpty(query))
+        {
+            _cosines = Semantic.Similarities(query);
+            _semanticScores = Semantic.Scores(query);
+        }
 
         Category? scope;
         double scopeScore;
@@ -48,13 +66,20 @@ public sealed class KeywordRetriever : IRetriever
         {
             var inScope = Rank(_kb.QuestionsUnder(scope.Id), lemmas, _config.Scoring.ScopeBoost);
             if (inScope.Count > 0 || forcedScope != null)
-                return new RetrievalResult(lemmas, scope, scopeScore, inScope);
+                return WithSemantic(new RetrievalResult(lemmas, scope, scopeScore, inScope));
             // В области ничего не нашлось: ищем по всей базе.
         }
 
         var everywhere = Rank(_kb.Questions, lemmas, 0);
-        return new RetrievalResult(lemmas, null, scope == null ? scopeScore : 0, everywhere);
+        return WithSemantic(new RetrievalResult(lemmas, null, scope == null ? scopeScore : 0, everywhere));
     }
+
+    private RetrievalResult WithSemantic(RetrievalResult result) =>
+        result with
+        {
+            Semantic = new Dictionary<string, double>(_semanticScores),
+            Cosines = new Dictionary<string, double>(_cosines)
+        };
 
     private List<Candidate> Rank(IEnumerable<Question> pool, IReadOnlyList<string> lemmas, double boost)
     {
@@ -63,7 +88,8 @@ public sealed class KeywordRetriever : IRetriever
         {
             var (keywordScore, matched) = Scorer.Evaluate(
                 question.Keywords, lemmas, _config.Scoring.PrefixMinLength, Fuzzy);
-            var score = keywordScore;
+            var score = Scorer.CombineScores(keywordScore, _semanticScores.GetValueOrDefault(question.Id),
+                _config.Semantic.Combine);
             if (score <= 0) continue;
             var final = boost > 0 ? Math.Min(1.0, score * (1 + boost)) : score;
             scored.Add((question, final, matched, keywordScore));
@@ -74,7 +100,8 @@ public sealed class KeywordRetriever : IRetriever
             .ThenByDescending(x => x.Matched)
             .ThenBy(x => x.Question.Id, IdComparer.Instance)
             .Take(MaxCandidates)
-            .Select(x => new Candidate(x.Question, x.Score, x.KeywordScore))
+            .Select(x => new Candidate(x.Question, x.Score, x.KeywordScore,
+                _cosines.TryGetValue(x.Question.Id, out var cosine) ? cosine : null))
             .ToList();
     }
 }

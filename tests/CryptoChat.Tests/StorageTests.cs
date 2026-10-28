@@ -410,7 +410,7 @@ public class ConversationTests : IDisposable
     [Fact]
     public void Conversation_WritesFileAndDatabase()
     {
-        var engine = ChatEngine.Create(TestSupport.FindContentDir(), "stemmer");
+        var engine = ChatEngine.Create(TestSupport.FindContentDir(), "stemmer", semantic: false);
         engine.Config.Sessions.Path = _tmp.Sub("sessions");
         engine.Config.Database.Path = _tmp.Sub("cryptochat.db");
         engine.Config.Email.Enabled = false;

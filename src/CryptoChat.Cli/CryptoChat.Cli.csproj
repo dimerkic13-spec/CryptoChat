@@ -32,6 +32,11 @@
     <Content Include="..\..\content\**\*.json" Link="content\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Модель для поиска по смыслу (папка models, её создаёт tools/export_onnx.py; в Git не хранится) -->
+  <ItemGroup>
+    <None Include="..\..\models\**\*" Link="models\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Словари морфологии (pymorphy3) копируются рядом с программой -->
   <ItemGroup>
     <None Include="..\..\dicts\**\*" Link="dicts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

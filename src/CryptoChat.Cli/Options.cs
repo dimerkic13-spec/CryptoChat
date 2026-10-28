@@ -7,6 +7,10 @@ internal sealed class Options
     public bool Validate { get; private set; }
     public bool SelfTest { get; private set; }
     public bool Compare { get; private set; }
+    public bool CompareSemantic { get; private set; }
+    public bool DownloadModel { get; private set; }
+    public bool CheckModel { get; private set; }
+    public bool SemanticDump { get; private set; }
     public string? Morphology { get; private set; }
     public bool Debug { get; private set; }
     public bool TestEmail { get; private set; }
@@ -38,6 +42,10 @@ internal sealed class Options
                 case "--validate": options.Validate = true; break;
                 case "--selftest": options.SelfTest = true; break;
                 case "--compare": options.Compare = true; break;
+                case "--compare-semantic": options.CompareSemantic = true; break;
+                case "--download-model": options.DownloadModel = true; break;
+                case "--check-model": options.CheckModel = true; break;
+                case "--semantic-dump": options.SemanticDump = true; break;
                 case "--debug": options.Debug = true; break;
                 case "--test-email": options.TestEmail = true; break;
                 case "--send-pending": options.SendPending = true; break;

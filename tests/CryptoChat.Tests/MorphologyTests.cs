@@ -160,7 +160,7 @@ public class RealMorphologyTests
     [Fact]
     public void RealContent_LoadsWithMorphology()
     {
-        var engine = ChatEngine.Create(ContentDir, "pymorphy3");
+        var engine = ChatEngine.Create(ContentDir, "pymorphy3", semantic: false);
         Assert.Equal("pymorphy3", engine.Morphology);
         Assert.Equal(38, engine.KnowledgeBase.Questions.Count);
     }
@@ -177,7 +177,7 @@ public class RealMorphologyTests
     [Fact]
     public void Acceptance_WithMorphology()
     {
-        var (failures, _, _) = SelfTest.CheckAcceptance(ChatEngine.Create(ContentDir, "pymorphy3"), ContentDir);
+        var (failures, _, _) = SelfTest.CheckAcceptance(ChatEngine.Create(ContentDir, "pymorphy3", semantic: false), ContentDir);
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
 
@@ -185,7 +185,7 @@ public class RealMorphologyTests
     [Fact]
     public void Days_DoNotMatchMoney()
     {
-        var reply = ChatEngine.Create(ContentDir, "pymorphy3").Ask("сколько дней работает без лицензии");
+        var reply = ChatEngine.Create(ContentDir, "pymorphy3", semantic: false).Ask("сколько дней работает без лицензии");
         Assert.Equal("1.1.2.2", SelfTest.FirstQuestionId(reply));
     }
 }

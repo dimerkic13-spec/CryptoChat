@@ -74,7 +74,8 @@ internal static class SelfTest
     }
 
     /// <summary>Новый движок с той же базой: у каждой проверки своя чистая беседа.</summary>
-    public static ChatEngine Fresh(ChatEngine template) => new(template.KnowledgeBase, template.Config);
+    public static ChatEngine Fresh(ChatEngine template) =>
+        new(template.KnowledgeBase, template.Config, semantic: template.Semantic);
 
     public static string? FirstQuestionId(ChatReply reply) => reply.Kind switch
     {
