@@ -72,6 +72,8 @@ public static class ConsoleApp
 
             if (options.SelfTest)
                 return SelfTest.Run(engine, contentDir);
+            if (options.Synthetic)
+                return Synthetic.Run(engine, contentDir);
 
             return Chat(engine);
         }
@@ -304,6 +306,7 @@ public static class ConsoleApp
         Console.WriteLine("  --content <путь>   каталог с данными (иначе ./content рядом с программой)");
         Console.WriteLine("  --validate         проверить данные и выйти");
         Console.WriteLine("  --selftest         прогнать приёмочные вопросы и выйти");
+        Console.WriteLine("  --synthetic        проверка качества на content/synthetic.json (по 50 запросов на вопрос)");
         Console.WriteLine("  --compare          сравнить стеммер и pymorphy3 на приёмочных вопросах");
         Console.WriteLine("  --morphology <m>   stemmer, pymorphy3 или auto (вместо text.morphology из config.json)");
         Console.WriteLine("  --compare-semantic сравнить поиск с моделью и без неё (контрольные запросы и перефразы)");

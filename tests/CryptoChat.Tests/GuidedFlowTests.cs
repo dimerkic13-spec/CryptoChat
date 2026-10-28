@@ -100,7 +100,8 @@ public class GuidedFlowTests
         var menu = engine.Ask("Забыл пароль от рутокена");
         Assert.Equal(ReplyKind.Clarify, menu.Kind);
         Assert.Equal("1.3.2.1", menu.Options[0].Question?.Id);
-        Assert.Equal("1.3.3.2", menu.Options[1].Question?.Id);
+        // С 0.2.6a «пароль от кабинета» сюда больше не попадает: у вопроса 1.3.3.2 больше ключей,
+        // и одно слово «пароль» не дотягивает до порога уточнения. Вопрос про токен — первый.
 
         var answer = engine.Ask("1");
         Assert.Equal(ReplyKind.Answer, answer.Kind);

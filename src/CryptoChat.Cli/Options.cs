@@ -6,6 +6,7 @@ internal sealed class Options
     public string? ContentPath { get; private set; }
     public bool Validate { get; private set; }
     public bool SelfTest { get; private set; }
+    public bool Synthetic { get; private set; }
     public bool Compare { get; private set; }
     public bool CompareSemantic { get; private set; }
     public bool DownloadModel { get; private set; }
@@ -41,6 +42,7 @@ internal sealed class Options
                     break;
                 case "--validate": options.Validate = true; break;
                 case "--selftest": options.SelfTest = true; break;
+                case "--synthetic": options.Synthetic = true; break;
                 case "--compare": options.Compare = true; break;
                 case "--compare-semantic": options.CompareSemantic = true; break;
                 case "--download-model": options.DownloadModel = true; break;
