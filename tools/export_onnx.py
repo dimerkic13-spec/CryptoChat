@@ -130,7 +130,8 @@ def main() -> int:
         "model": args.model,
         "maxSeqLength": max_length,
         "doLowerCase": do_lower_case,
-        "dimension": int(st.get_sentence_embedding_dimension()),
+        "dimension": int(getattr(st, "get_embedding_dimension", None) and st.get_embedding_dimension()
+                         or st.get_sentence_embedding_dimension()),
         "inputs": input_names,
         "output": OUTPUT,
         "exportedWith": {"torch": torch.__version__,
