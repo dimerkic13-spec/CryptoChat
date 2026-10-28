@@ -30,12 +30,26 @@ public class SyntheticQualityTests
     }
 
     [Theory]
-    [InlineData("pymorphy3", 0.84)] // 0.2.5a: 0.755, 0.2.6a: 0.852
-    [InlineData("stemmer", 0.83)]   // 0.2.5a: 0.756, 0.2.6a: 0.843
+    [InlineData("pymorphy3", 0.85)] // 0.2.5a: 0.755, 0.2.6a: 0.852, 0.2.7a: 0.868
+    [InlineData("stemmer", 0.85)]   // 0.2.5a: 0.756, 0.2.6a: 0.843, 0.2.7a: 0.865
     public void RightQuestionComesFirst(string morphology, double minimum)
     {
         var (share, wrong, total) = Measure(morphology);
         Assert.True(share >= minimum, $"верный вопрос первым: {share:P1} из {total}, нужно не меньше {minimum:P0}");
         Assert.True(wrong <= 1, $"неверных прямых ответов: {wrong}");
+    }
+
+    /// <summary>Пользователь выбирает подходящий пункт меню: верный ответ не больше чем за 3 уточнения.</summary>
+    [Theory]
+    [InlineData("pymorphy3", 0.97)] // 0.2.6a: 0.932, 0.2.7a: 0.979
+    [InlineData("stemmer", 0.96)]   // 0.2.6a: 0.931, 0.2.7a: 0.974
+    public void DialogReachesAnswerWithin3Steps(string morphology, double minimum)
+    {
+        var engine = ChatEngine.Create(ContentDir, morphology, semantic: false);
+        var results = Synthetic.EvaluateDialogs(engine, Synthetic.Load(ContentDir));
+        var within3 = (double)results.Count(r => r.Outcome == Synthetic.DialogOutcome.Answer && r.Steps <= 3) / results.Count;
+        var wrong = results.Count(r => r.Outcome == Synthetic.DialogOutcome.Wrong);
+        Assert.True(within3 >= minimum, $"верный ответ за ≤3 уточнения: {within3:P1}");
+        Assert.True(wrong <= 1, $"неверных ответов: {wrong}");
     }
 }

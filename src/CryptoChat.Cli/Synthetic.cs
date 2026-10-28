@@ -63,6 +63,42 @@ internal static class Synthetic
         return results;
     }
 
+    /// <summary>Чем закончился диалог с пользователем, который выбирает подходящий пункт меню.</summary>
+    public enum DialogOutcome { Answer, Wrong, Support, Lost }
+
+    public sealed record DialogResult(string Expected, string Query, DialogOutcome Outcome, int Steps);
+
+    /// <summary>
+    /// Диалог с «идеальным» пользователем: в каждом меню он выбирает нужный вопрос, раздел, где он лежит,
+    /// или «Другая тема»; если ничего подходящего нет — 0 (поддержка). Steps — сколько раз он выбирал из меню.
+    /// </summary>
+    public static (DialogOutcome Outcome, int Steps) Simulate(ChatEngine template, string query, string expected, int maxSteps = 8)
+    {
+        var bot = SelfTest.Fresh(template);
+        var reply = bot.Ask(query);
+        var steps = 0;
+        while (true)
+        {
+            if (reply.Kind == ReplyKind.Answer)
+                return (reply.Question?.Id == expected ? DialogOutcome.Answer : DialogOutcome.Wrong, steps);
+            var pick = reply.Options.FirstOrDefault(o => o.Question?.Id == expected)
+                       ?? reply.Options.FirstOrDefault(o => o.Branch != null && (expected + ".").StartsWith(o.Branch.Id + ".", StringComparison.Ordinal))
+                       ?? reply.Options.FirstOrDefault(o => o.Browse && o.Branch == null);
+            if (pick == null)
+                return (DialogOutcome.Support, steps);
+            if (++steps > maxSteps)
+                return (DialogOutcome.Lost, steps);
+            reply = bot.Ask(pick.Number.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    public static List<DialogResult> EvaluateDialogs(ChatEngine template, Dictionary<string, List<string>> cases) =>
+        cases.SelectMany(c => c.Value.Select(q =>
+        {
+            var (outcome, steps) = Simulate(template, q, c.Key);
+            return new DialogResult(c.Key, q, outcome, steps);
+        })).ToList();
+
     public static int Run(ChatEngine template, string contentDir)
     {
         var cases = Load(contentDir);
@@ -85,8 +121,16 @@ internal static class Synthetic
         Console.WriteLine($"Морфология: {template.Morphology}; поиск по смыслу: {template.Semantic?.Name ?? "выкл"}");
         Console.WriteLine($"Запросов: {results.Count} (вопросов: {cases.Count})");
         Console.WriteLine("Всего: " + Line(results));
+        var dialogs = EvaluateDialogs(template, cases);
+        int Reached(IEnumerable<DialogResult> rs, int limit = 3) => rs.Count(r => r.Outcome == DialogOutcome.Answer && r.Steps <= limit);
+        string Share(int k) => $"{100.0 * k / dialogs.Count:F1}%";
+        int AtSteps(int k) => dialogs.Count(r => r.Outcome == DialogOutcome.Answer && r.Steps == k);
+        Console.WriteLine($"Диалог (пользователь выбирает подходящий пункт меню): верный ответ не больше чем за 3 уточнения " +
+                          $"{Reached(dialogs)} ({Share(Reached(dialogs))}), дошли до верного ответа {Reached(dialogs, 99)} ({Share(Reached(dialogs, 99))})");
+        Console.WriteLine($"  сразу {AtSteps(0)}, за 1 уточнение {AtSteps(1)}, за 2 — {AtSteps(2)}, за 3 — {AtSteps(3)}; " +
+                          $"поддержка {dialogs.Count(r => r.Outcome == DialogOutcome.Support)}, неверный ответ {dialogs.Count(r => r.Outcome == DialogOutcome.Wrong)}");
         Console.WriteLine();
-        Console.WriteLine("По вопросам (верно первым / промахов):");
+        Console.WriteLine("По вопросам (верно первым / промахов / ответ за ≤3 уточнения):");
         var titles = template.KnowledgeBase.Questions.ToDictionary(q => q.Id, q => q.Title);
         foreach (var group in results.GroupBy(r => r.Expected).OrderBy(g => g.Key, Core.Retrieval.IdComparer.Instance))
         {
@@ -94,7 +138,8 @@ internal static class Synthetic
             var first = rs.Count(r => r.Outcome is Outcome.Answer or Outcome.First);
             var miss = rs.Count(r => r.Outcome == Outcome.Miss);
             var title = titles.GetValueOrDefault(group.Key, "");
-            Console.WriteLine($"  {group.Key,-8} {first,3}/{rs.Count,-3} промахов {miss,3}  {(title.Length > 55 ? title[..55] + "…" : title)}");
+            var dialogOk = Reached(dialogs.Where(d => d.Expected == group.Key));
+            Console.WriteLine($"  {group.Key,-8} {first,3}/{rs.Count,-3} промахов {miss,3}  за ≤3: {dialogOk,3}  {(title.Length > 55 ? title[..55] + "…" : title)}");
         }
 
         var wrong = results.Where(r => r.Outcome == Outcome.WrongAnswer).ToList();

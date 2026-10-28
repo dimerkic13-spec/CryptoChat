@@ -67,6 +67,12 @@ public sealed class DialogConfig
     /// </summary>
     public double SuggestScore { get; set; } = 0.15;
 
+    /// <summary>Дозаполнять меню «Уточните…» до menu.maxOptions вопросами с оценкой не ниже этой (0 — не дозаполнять).</summary>
+    public double MenuFillScore { get; set; } = 0;
+
+    /// <summary>Добавлять в меню вопросов пункты «Другие вопросы раздела …» и «Другая тема — выбрать из списка тем».</summary>
+    public bool BrowseOptions { get; set; } = false;
+
     /// <summary>Спрашивать после ответа, помог ли он.</summary>
     public bool Feedback { get; set; } = true;
 }
@@ -261,6 +267,7 @@ public sealed class AppConfig
         Require(Dialog.EscalateAfterSteps >= 1, "dialog.escalateAfterSteps должно быть не меньше 1.");
         Require(Dialog.MaxBranchOptions >= 2, "dialog.maxBranchOptions должно быть не меньше 2.");
         Require(Dialog.SuggestScore is >= 0 and <= 1, "dialog.suggestScore должно быть от 0 до 1.");
+        Require(Dialog.MenuFillScore is >= 0 and <= 1, "dialog.menuFillScore должно быть от 0 до 1.");
         Require(Dialog.MinScore is >= 0 and <= 1, "dialog.minScore должно быть от 0 до 1.");
         Require(Text.Morphology.ToLowerInvariant() is "stemmer" or "pymorphy3" or "auto",
             "text.morphology должно быть stemmer, pymorphy3 или auto.");

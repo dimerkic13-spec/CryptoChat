@@ -222,6 +222,10 @@ public sealed class ChatEngine
             return Respond(_retriever.Search(pending.Lemmas, option.Product, pending.Query),
                 option.Product, pending.Query, fromMenu: true);
 
+        if (option.Browse)
+            return BranchReply(option.Branch, _retriever.Search(pending.Lemmas, option.Branch, pending.Query),
+                pending.Query, null, browse: true);
+
         if (option.Branch != null)
             return Respond(_retriever.Search(pending.Lemmas, option.Branch, pending.Query),
                 option.Branch, pending.Query, fromMenu: true);
@@ -309,6 +313,7 @@ public sealed class ChatEngine
                 var options = decision.Candidates
                     .Select((c, i) => new ChatOption(i + 1, c.Question.Title, c.Score, c.Question, null))
                     .ToList();
+                options.AddRange(BrowseOptions(options));
                 _session.Wait(new PendingChoice(ReplyKind.Clarify, options, result.Lemmas, null, query));
 
                 var sb = new StringBuilder();
@@ -322,7 +327,7 @@ public sealed class ChatEngine
                 {
                     sb.Append("Уточните, что вы имеете в виду?");
                     foreach (var o in options)
-                        sb.Append('\n').Append($"  {o.Number}. {o.Label}  (score: {Fmt(o.Score)})");
+                        sb.Append('\n').Append(o.Browse ? $"  {o.Number}. {o.Label}" : $"  {o.Number}. {o.Label}  (score: {Fmt(o.Score)})");
                     sb.Append('\n').Append("  0. Другое / связаться с поддержкой");
                 }
                 sb.Append('\n').Append("Введите номер:");
@@ -377,6 +382,7 @@ public sealed class ChatEngine
         var options = chosen
             .Select((x, i) => new ChatOption(i + 1, pool[x.Id].Title, x.Score, pool[x.Id], null))
             .ToList();
+        options.AddRange(BrowseOptions(options));
         _session.Wait(new PendingChoice(ReplyKind.Clarify, options, result.Lemmas, null, query));
 
         var sb = new StringBuilder("Точного совпадения не нашёл. Возможно, вы имели в виду:");
@@ -387,13 +393,33 @@ public sealed class ChatEngine
         return new ChatReply(ReplyKind.Clarify, sb.ToString(), options, debug);
     }
 
+    /// <summary>
+    /// Пункты под меню вопросов (dialog.browseOptions): все вопросы раздела первого варианта
+    /// и список тем. Нужный вопрос найдётся по списку, даже если меню его не угадало.
+    /// </summary>
+    private List<ChatOption> BrowseOptions(IReadOnlyList<ChatOption> options)
+    {
+        var extra = new List<ChatOption>();
+        if (!Guided || !_config.Dialog.BrowseOptions || options.Count == 0)
+            return extra;
+
+        var first = options[0].Question;
+        var block = first != null ? _kb.Categories.GetValueOrDefault(first.CategoryId) : null;
+        var shown = options.Where(o => o.Question != null).Select(o => o.Question!.Id).ToHashSet();
+        if (block != null && _kb.QuestionsUnder(block.Id).Any(q => q.IsActive && !shown.Contains(q.Id)))
+            extra.Add(new ChatOption(options.Count + 1, $"Другие вопросы раздела «{block.Name}»", 0.0, null, null, block, Browse: true));
+        extra.Add(new ChatOption(options.Count + extra.Count + 1, "Другая тема — выбрать из списка тем", 0.0, null, null, null, Browse: true));
+        return extra;
+    }
+
     // ---------- Уточнение по веткам дерева ----------
 
     /// <summary>
     /// Предлагает выбрать тему (или блок), а на последнем уровне — конкретный вопрос.
-    /// Ветки с единственным вложенным разделом пропускаются.
+    /// Ветки с единственным вложенным разделом пропускаются. browse — переход «по списку»:
+    /// выбор ветки сразу открывает её содержимое, без нового поиска.
     /// </summary>
-    private ChatReply BranchReply(Category? node, RetrievalResult result, string? query, string? debug)
+    private ChatReply BranchReply(Category? node, RetrievalResult result, string? query, string? debug, bool browse = false)
     {
         var lemmas = result.Lemmas;
         var prefix = _config.Scoring.PrefixMinLength;
@@ -438,7 +464,7 @@ public sealed class ChatEngine
             .OrderByDescending(x => x.Score)
             .ThenBy(x => x.Category.Id, IdComparer.Instance)
             .Take(max)
-            .Select((x, i) => new ChatOption(i + 1, x.Category.Name, x.Score, null, null, x.Category))
+            .Select((x, i) => new ChatOption(i + 1, x.Category.Name, x.Score, null, null, x.Category, browse))
             .ToList();
         _session.Wait(new PendingChoice(ReplyKind.ClarifyBranch, branchOptions, lemmas, null, query));
 
