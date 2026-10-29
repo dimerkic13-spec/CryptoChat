@@ -19,7 +19,7 @@ public class GuidedFlowTests
         var config = AppConfig.Load(ContentDir);
         Assert.True(config.Dialog.Guided);
         Assert.Equal(4, config.Dialog.EscalateAfterSteps);
-        Assert.Equal(0.6, config.Thresholds.Answer, 6);
+        Assert.Equal(0.65, config.Thresholds.Answer, 6);
         Assert.Equal(0.3, config.Thresholds.Clarify, 6);
     }
 
@@ -81,13 +81,14 @@ public class GuidedFlowTests
     [Fact]
     public void ConfidentAnswer_ComesWithSimilarQuestionsFeedbackAndSupport()
     {
-        var reply = NewEngine().Ask("забыл логин и пароль от кабинета");
+        // С 0.2.7b порог ответа 0.65: «забыл логин и пароль от кабинета» (0.6x) теперь уточняется меню.
+        var reply = NewEngine().Ask("Можно оплатить счёт на ИП банковской картой?");
 
         Assert.Equal(ReplyKind.Answer, reply.Kind);
-        Assert.Equal("1.3.3.2", reply.Question?.Id);
+        Assert.Equal("1.2.2.4", reply.Question?.Id);
         Assert.Contains("Ответ помог?", reply.Text);
         Assert.Contains("0. Обратиться в техподдержку", reply.Text);
-        Assert.Equal("1.3.2.1", reply.Options[0].Question?.Id);
+        Assert.Equal("1.2.1.1", reply.Options[0].Question?.Id);
     }
 
     [Fact]
@@ -122,17 +123,17 @@ public class GuidedFlowTests
         var given = new List<FeedbackEntry>();
         engine.FeedbackGiven += given.Add;
 
-        engine.Ask("забыл логин и пароль от кабинета");
+        engine.Ask("Можно оплатить счёт на ИП банковской картой?");
         var reply = engine.Ask("нет");
 
         Assert.Equal(ReplyKind.Feedback, reply.Kind);
         Assert.Contains("0. Обратиться в техподдержку", reply.Text);
-        Assert.Single(reply.Options);
+        Assert.Equal(3, reply.Options.Count);
         Assert.False(Assert.Single(given).Helpful);
 
         var next = engine.Ask("1");
         Assert.Equal(ReplyKind.Answer, next.Kind);
-        Assert.Equal("1.3.2.1", next.Question?.Id);
+        Assert.Equal("1.2.1.1", next.Question?.Id);
     }
 
     [Fact]

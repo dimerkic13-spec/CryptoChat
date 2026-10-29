@@ -320,7 +320,7 @@ public class SemanticFactoryTests
         var engine = ChatEngine.Create(ContentDir, "stemmer", appDir: Path.GetTempPath());
         Assert.Null(engine.Semantic);
         Assert.NotNull(engine.SemanticNote);
-        Assert.Equal(ReplyKind.Answer, engine.Ask("забыл логин и пароль от кабинета").Kind);
+        Assert.Equal(ReplyKind.Answer, engine.Ask("Можно оплатить счёт на ИП банковской картой?").Kind);
     }
 }
 
@@ -374,7 +374,7 @@ public class OnnxEncoderTests
         var config = AppConfig.Load(TestSupport.FindContentDir());
         var index = new SemanticIndex(encoder, kb.Questions, mode: "relative", weight: 0.3, zLow: 0, zHigh: 5);
         Assert.Equal(152, index.Phrases); // 38 заголовков + 114 примеров
-        var reply = new ChatEngine(kb, config, semantic: index).Ask("забыл логин и пароль от кабинета");
+        var reply = new ChatEngine(kb, config, semantic: index).Ask("Можно оплатить счёт на ИП банковской картой?");
         Assert.Equal(ReplyKind.Answer, reply.Kind);
     }
 }

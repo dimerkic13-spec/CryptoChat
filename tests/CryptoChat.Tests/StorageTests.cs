@@ -416,7 +416,7 @@ public class ConversationTests : IDisposable
         engine.Config.Email.Enabled = false;
 
         var conversation = new Conversation(engine);
-        foreach (var line in new[] { "забыл логин и пароль от кабинета", "да", "абракадабра", "выход" })
+        foreach (var line in new[] { "Можно оплатить счёт на ИП банковской картой?", "да", "абракадабра", "выход" })
         {
             conversation.User(line);
             conversation.Bot(line, engine.Ask(line));

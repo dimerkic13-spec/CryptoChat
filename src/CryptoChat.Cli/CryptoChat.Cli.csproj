@@ -8,7 +8,7 @@
     <AssemblyName>CryptoChat</AssemblyName>
     <RootNamespace>CryptoChat.Cli</RootNamespace>
     <Version>0.2.7</Version>
-    <InformationalVersion>0.2.7a</InformationalVersion>
+    <InformationalVersion>0.2.7b</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
