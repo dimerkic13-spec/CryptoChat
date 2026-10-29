@@ -59,8 +59,8 @@ public static class ConsoleApp
                 return SemanticCommands.SemanticDump(contentDir, options.Morphology);
             if (options.TestEmail || options.SendPending)
                 return EmailCommand(contentDir, options);
-            if (options.Stats)
-                return Stats(contentDir);
+            if (options.Stats || options.StatsCsv || options.Sessions || options.Session != null)
+                return Stats(contentDir, options);
 
             var semantic = AppConfig.Load(contentDir).Semantic;
             if (semantic.Enabled && SemanticFactory.ModelExists(semantic, AppDirectory()))
@@ -195,20 +195,48 @@ public static class ConsoleApp
 
     // ---------- Статистика ----------
 
-    private static int Stats(string contentDir)
+    private static int Stats(string contentDir, Options options)
     {
         var config = AppConfig.Load(contentDir);
-        var titles = new Dictionary<string, string>();
-        try
+        var path = DatabasePath(config);
+        var catalog = Analytics.Catalog.Load(contentDir); // пустой, если в базе знаний ошибка — статистика нужна и тогда
+        var period = new Analytics.Period(options.From, options.To);
+
+        if (options.Session != null)
         {
-            foreach (var q in KnowledgeLoader.LoadContent(contentDir).Questions)
-                titles.TryAdd(q.Id, q.Title);
+            Console.WriteLine(Analytics.SessionReport(path, options.Session, catalog));
+            return 0;
         }
-        catch (ContentException)
+        if (options.Sessions)
         {
-            // Статистика нужна и тогда, когда в базе знаний ошибка.
+            Console.WriteLine(Analytics.SessionList(path, period, options.Top > 10 ? options.Top : 20));
+            return 0;
         }
-        Console.WriteLine(ChatDatabase.StatsReport(DatabasePath(config), titles));
+        if (options.StatsCsv)
+        {
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"База бесед ещё не создана: {path}");
+                return 1;
+            }
+            var folder = options.StatsCsvFolder
+                         ?? Path.Combine(Path.GetDirectoryName(path)!, $"stats-{DateTime.Now:yyyyMMdd-HHmmss}");
+            try
+            {
+                var files = Analytics.ExportCsv(path, catalog, period, folder);
+                Console.WriteLine($"Статистика ({period}) выгружена в {Path.GetFullPath(folder)}:");
+                foreach (var file in files)
+                    Console.WriteLine("  " + Path.GetFileName(file));
+                Console.WriteLine("Файлы открываются в Excel двойным щелчком.");
+                return 0;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine($"Не удалось записать файлы в {folder}: {ex.Message}");
+                return 1;
+            }
+        }
+        Console.WriteLine(Analytics.Report(path, catalog, period, options.Top));
         return 0;
     }
 
@@ -316,7 +344,11 @@ public static class ConsoleApp
         Console.WriteLine("  --debug            показывать, как бот ищет ответ");
         Console.WriteLine("  --test-email       отправить тестовое письмо по настройкам email из config.json");
         Console.WriteLine("  --send-pending     отправить на почту журналы, которые не ушли раньше");
-        Console.WriteLine("  --stats            статистика по базе бесед: частые вопросы, отзывы, неотвеченные запросы");
+        Console.WriteLine("  --stats            статистика по базе бесед: популярные и редкие вопросы, разделы, отзывы, без ответа, по дням");
+        Console.WriteLine("  --from <дата>      статистика с этой даты (2026-10-29 или 29.10.2026); --to <дата> — по эту дату");
+        Console.WriteLine("  --top <N>          сколько вопросов показывать в топах (по умолчанию 10)");
+        Console.WriteLine("  --stats-csv [папка] выгрузить статистику в CSV для Excel (по умолчанию logs/stats-<дата>)");
+        Console.WriteLine("  --sessions         список последних бесед; --session <номер> — итог и переписка одной беседы");
         Console.WriteLine("  --version          показать версию");
         Console.WriteLine("  --help             эта подсказка");
     }
