@@ -47,7 +47,7 @@ public class PreprocessorTests
     [Fact]
     public void SynonymMap_WordInTwoGroups_Throws()
     {
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             new SynonymMap(new[]
             {
                 new[] { "вернуть", "возврат" },

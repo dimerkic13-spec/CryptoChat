@@ -9,10 +9,11 @@ public interface ITextProcessor
 }
 
 /// <summary>
-/// Конвейер: нормализация → синонимы-фразы → слова → стоп-слова → стемминг → синонимы-слова.
+/// Конвейер: нормализация → синонимы-фразы → слова → стоп-слова → основа слова → синонимы-слова.
 /// </summary>
 public sealed class TextProcessor : ITextProcessor
 {
+    // Слово — это буквы, цифры и точки (чтобы «5.0» оставалось одним словом).
     private static readonly Regex TokenRegex = new(@"[\p{L}\p{N}\.]+", RegexOptions.Compiled);
 
     public static readonly string[] DefaultStopWords =
@@ -27,11 +28,14 @@ public sealed class TextProcessor : ITextProcessor
 
     private readonly HashSet<string> _stopWords;
     private readonly SynonymMap _synonyms;
+    private readonly ILemmatizer _lemmatizer;
 
-    public TextProcessor(IEnumerable<string>? stopWords = null, SynonymMap? synonyms = null)
+    public TextProcessor(IEnumerable<string>? stopWords = null, SynonymMap? synonyms = null,
+        ILemmatizer? lemmatizer = null)
     {
         _stopWords = new HashSet<string>((stopWords ?? DefaultStopWords).Select(Normalizer.Normalize));
-        _synonyms = synonyms ?? SynonymMap.Empty;
+        _lemmatizer = lemmatizer ?? StemmerLemmatizer.Instance;
+        _synonyms = synonyms ?? new SynonymMap(Array.Empty<IReadOnlyList<string>>(), _lemmatizer);
     }
 
     public IReadOnlyList<string> Lemmatize(string text)
@@ -48,7 +52,7 @@ public sealed class TextProcessor : ITextProcessor
             if (token.Length < 2 || _stopWords.Contains(token))
                 continue;
 
-            var lemma = Stemmer.Stem(token);
+            var lemma = _lemmatizer.Lemmatize(token);
             if (lemma.Length == 0)
                 continue;
 

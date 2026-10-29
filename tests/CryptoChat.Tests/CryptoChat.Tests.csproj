@@ -18,8 +18,14 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Данные для тестов: похожести настоящей модели, маленькая модель ONNX и её токенизатор -->
+  <ItemGroup>
+    <None Include="data\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\CryptoChat.Core\CryptoChat.Core.csproj" />
+    <ProjectReference Include="..\..\src\CryptoChat.Cli\CryptoChat.Cli.csproj" />
   </ItemGroup>
 
 </Project>

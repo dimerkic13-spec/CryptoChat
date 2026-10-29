@@ -7,10 +7,21 @@
     <Nullable>enable</Nullable>
     <AssemblyName>CryptoChat</AssemblyName>
     <RootNamespace>CryptoChat.Cli</RootNamespace>
-    <Version>0.1.0</Version>
-    <InformationalVersion>0.1a</InformationalVersion>
+    <Version>0.2.7</Version>
+    <InformationalVersion>0.2.7b</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CryptoChat.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- База бесед SQLite (logs/cryptochat.db) и отчёт по ключу stats -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <!-- Отправка журналов на почту: SMTP с SSL (порт 465) и STARTTLS (порт 587) -->
+    <PackageReference Include="MailKit" Version="4.18.2" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CryptoChat.Core\CryptoChat.Core.csproj" />
@@ -19,6 +30,16 @@
   <!-- Каталог content/ из корня репозитория копируется рядом с программой -->
   <ItemGroup>
     <Content Include="..\..\content\**\*.json" Link="content\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Модель для поиска по смыслу (папка models, её создаёт tools/export_onnx.py; в Git не хранится) -->
+  <ItemGroup>
+    <None Include="..\..\models\**\*" Link="models\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Словари морфологии (pymorphy3) копируются рядом с программой -->
+  <ItemGroup>
+    <None Include="..\..\dicts\**\*" Link="dicts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

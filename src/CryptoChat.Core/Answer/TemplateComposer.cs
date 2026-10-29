@@ -23,7 +23,7 @@ public sealed class TemplateComposer : IAnswerComposer
         var sb = new StringBuilder();
         sb.Append(question.Answer).Append('\n');
         sb.Append("📎 Источник: ").Append(url).Append(revision).Append('\n');
-        sb.Append("(score: ").Append(score.ToString("0.00", CultureInfo.InvariantCulture)).Append(sectionPart).Append(')');
+        sb.Append("(score: ").Append(score.ToString("F2", CultureInfo.InvariantCulture)).Append(sectionPart).Append(')');
         return sb.ToString();
     }
 }

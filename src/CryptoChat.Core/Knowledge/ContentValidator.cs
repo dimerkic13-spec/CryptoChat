@@ -6,11 +6,18 @@ namespace CryptoChat.Core.Knowledge;
 /// <summary>
 /// Проверяет данные до того, как по ним строится база. Ошибки (V001–V012) мешают запуску,
 /// предупреждения (V013, V014, V016) только сообщают о подозрительных местах.
+///
+/// lemmatizer — тот же способ приведения слова, что и при поиске (стеммер или морфология).
+/// С морфологией повтор ключа (V008) — только предупреждение: разные формы одного слова
+/// («купил», «купить») сливаются в одну, и при загрузке берётся больший вес.
 /// </summary>
 public static class ContentValidator
 {
-    public static IReadOnlyList<ValidationIssue> Validate(ContentSet content, IEnumerable<string>? stopWords = null)
+    public static IReadOnlyList<ValidationIssue> Validate(ContentSet content, IEnumerable<string>? stopWords = null,
+        ILemmatizer? lemmatizer = null)
     {
+        lemmatizer ??= StemmerLemmatizer.Instance;
+        var strictDuplicates = lemmatizer is StemmerLemmatizer;
         var issues = new List<ValidationIssue>();
         var stop = new HashSet<string>((stopWords ?? TextProcessor.DefaultStopWords).Select(Normalizer.Normalize));
 
@@ -41,7 +48,7 @@ public static class ContentValidator
                 if (word.Any(IsLatin) && word.Any(IsCyrillic))
                     Err("V009", where, $"Ключ «{k.Word}» смешивает латиницу и кириллицу.");
 
-                var stem = Stemmer.Stem(word);
+                var stem = lemmatizer.Lemmatize(word);
                 if (stem.Length == 0)
                 {
                     Err("V010", where, $"Ключ «{k.Word}» пуст после стемминга.");
@@ -49,7 +56,13 @@ public static class ContentValidator
                 }
 
                 if (!seenStems.Add(stem))
-                    Err("V008", where, $"Ключ «{k.Word}» повторяется (основа «{stem}»).");
+                {
+                    var message = $"Ключ «{k.Word}» повторяется (основа «{stem}»).";
+                    if (strictDuplicates)
+                        Err("V008", where, message);
+                    else
+                        Warn("V008", where, message);
+                }
 
                 if (stop.Contains(word))
                     Warn("V014", where, $"Ключ «{k.Word}» совпадает со стоп-словом и никогда не сработает.");
@@ -126,7 +139,7 @@ public static class ContentValidator
         }
 
         // ---------- Синонимы ----------
-        var seenSynonyms = new HashSet<string>();
+        var synonymOwner = new Dictionary<string, int>(); // основа → номер группы
         for (int i = 0; i < content.Synonyms.Groups.Count; i++)
         {
             var group = content.Synonyms.Groups[i];
@@ -145,9 +158,9 @@ public static class ContentValidator
             {
                 var normalized = Normalizer.Normalize(member).Trim();
                 if (normalized.Length == 0) continue;
-                var key = normalized.Contains(' ') ? normalized : Stemmer.Stem(normalized);
-                if (!seenSynonyms.Add(key))
-                    Err("V012", where, $"Слово «{member}» повторяется или входит в несколько групп.");
+                var key = normalized.Contains(' ') ? normalized : lemmatizer.Lemmatize(normalized);
+                if (!synonymOwner.TryAdd(key, i) && synonymOwner[key] != i)
+                    Err("V012", where, $"Слово «{member}» входит в несколько групп.");
             }
         }
 

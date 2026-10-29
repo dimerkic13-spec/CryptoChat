@@ -13,14 +13,19 @@ public enum ReplyKind
     Exit
 }
 
-/// <summary>Один пункт меню: вопрос, продукт или ветка дерева (тема, блок).</summary>
+/// <summary>
+/// Один пункт меню: вопрос, продукт или ветка дерева (тема, блок).
+/// Browse — пункт «посмотреть по списку»: показать вопросы раздела Branch (или список тем, если Branch нет)
+/// без нового поиска — так пользователь доходит до нужного вопроса, даже если меню не угадало.
+/// </summary>
 public sealed record ChatOption(
     int Number,
     string Label,
     double Score,
     Question? Question,
     Category? Product,
-    Category? Branch = null);
+    Category? Branch = null,
+    bool Browse = false);
 
 /// <summary>Реакция бота на ввод пользователя. Консоль только печатает Text.</summary>
 public sealed record ChatReply(
