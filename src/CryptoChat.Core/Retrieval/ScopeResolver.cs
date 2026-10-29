@@ -1,5 +1,6 @@
 using CryptoChat.Core.Knowledge;
 using CryptoChat.Core.Models;
+using CryptoChat.Core.Text;
 
 namespace CryptoChat.Core.Retrieval;
 
@@ -12,11 +13,13 @@ public sealed record ScopeResult(Category? Category, double Score);
 public sealed class ScopeResolver
 {
     private readonly AppConfig _config;
+    private readonly FuzzyMatcher? _fuzzy;
     private readonly List<Category> _categoriesWithKeywords;
 
-    public ScopeResolver(KnowledgeBase knowledgeBase, AppConfig config)
+    public ScopeResolver(KnowledgeBase knowledgeBase, AppConfig config, FuzzyMatcher? fuzzy = null)
     {
         _config = config;
+        _fuzzy = fuzzy;
         _categoriesWithKeywords = knowledgeBase.Categories.Values
             .Where(c => c.Keywords.Count > 0 && (config.Scoring.CategoryScope || c.Kind == "product"))
             .ToList();
@@ -28,7 +31,7 @@ public sealed class ScopeResolver
             return new ScopeResult(null, 0);
 
         var scored = _categoriesWithKeywords
-            .Select(c => (Cat: c, Score: Scorer.Evaluate(c.Keywords, lemmas, _config.Scoring.PrefixMinLength).Score))
+            .Select(c => (Cat: c, Score: Scorer.Evaluate(c.Keywords, lemmas, _config.Scoring.PrefixMinLength, _fuzzy).Score))
             .ToList();
 
         var best = scored

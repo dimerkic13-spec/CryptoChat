@@ -72,7 +72,7 @@ public class AcceptanceTests
     public void RealConfig_HasCautiousThresholds()
     {
         var config = AppConfig.Load(ContentDir);
-        Assert.Equal(0.6, config.Thresholds.Answer, 6);
+        Assert.Equal(0.65, config.Thresholds.Answer, 6);
         Assert.Equal(0.3, config.Thresholds.Clarify, 6);
         Assert.False(config.Logging.Unanswered);
     }

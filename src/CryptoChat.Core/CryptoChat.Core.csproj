@@ -6,4 +6,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CryptoChat.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Поиск по смыслу: модель в формате ONNX запускается на процессоре -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+  </ItemGroup>
+
 </Project>

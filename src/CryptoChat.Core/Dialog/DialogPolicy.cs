@@ -74,6 +74,20 @@ public sealed class DialogPolicy : IDialogPolicy
                 return new DialogDecision(DecisionKind.ClarifyProduct, options, products);
         }
 
+        var fill = _config.Dialog.MenuFillScore;
+        if (guided && fill > 0)
+        {
+            // Меню из одного-двух вопросов часто не содержит нужного: добавляем следующие по оценке.
+            var shown = options.Select(c => c.Question.Id).ToHashSet();
+            foreach (var c in candidates)
+            {
+                if (options.Count >= max)
+                    break;
+                if (c.Score >= fill && shown.Add(c.Question.Id))
+                    options.Add(c);
+            }
+        }
+
         return new DialogDecision(DecisionKind.Clarify, options, NoProducts);
     }
 

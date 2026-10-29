@@ -1,6 +1,6 @@
 namespace CryptoChat.Core.Models;
 
-/// <summary>Ключевое слово: основа слова (после стемминга) и вес.</summary>
+/// <summary>Ключевое слово: основа слова (после стемминга или морфологии) и вес.</summary>
 public sealed record Keyword(string Word, double Weight);
 
 /// <summary>Категория дерева: тема, продукт, подтема, блок или подблок.</summary>
@@ -23,4 +23,9 @@ public sealed record Question(
     string? Anchor,
     string? Revision,
     bool IsActive,
-    IReadOnlyList<Keyword> Keywords);
+    IReadOnlyList<Keyword> Keywords,
+    IReadOnlyList<string>? Examples = null)
+{
+    /// <summary>Другие формулировки того же вопроса — для поиска по смыслу (необязательно).</summary>
+    public IReadOnlyList<string> Examples { get; init; } = Examples ?? Array.Empty<string>();
+}

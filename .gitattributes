@@ -1,0 +1,4 @@
+# Словари морфологии — двоичные файлы, Git не должен менять в них переводы строк
+dicts/**/*.dawg binary
+dicts/**/*.intdawg binary
+dicts/**/*.array binary

@@ -36,6 +36,9 @@ public sealed class RawQuestion
     public RawSource? Source { get; set; } = new();
     public string Status { get; set; } = "active";
     public List<RawKeyword> Keywords { get; set; } = new();
+
+    /// <summary>Другие формулировки вопроса — для поиска по смыслу (необязательно).</summary>
+    public List<string> Examples { get; set; } = new();
 }
 
 public sealed class RawTaxonomy

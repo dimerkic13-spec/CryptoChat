@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using CryptoChat.Core.Text;
 
 namespace CryptoChat.Core.Knowledge;
 
@@ -35,10 +36,10 @@ public static class KnowledgeLoader
     }
 
     /// <summary>Читает, проверяет и строит базу. При ошибках в данных бросает ContentException.</summary>
-    public static KnowledgeBase Load(string directory)
+    public static KnowledgeBase Load(string directory, ILemmatizer? lemmatizer = null)
     {
         var content = LoadContent(directory);
-        var errors = ContentValidator.Validate(content)
+        var errors = ContentValidator.Validate(content, lemmatizer: lemmatizer)
             .Where(i => i.Severity == Severity.Error)
             .ToList();
 
@@ -48,7 +49,14 @@ public static class KnowledgeLoader
             throw new ContentException($"В данных найдены ошибки ({errors.Count}):{Environment.NewLine}{text}");
         }
 
-        return KnowledgeBase.Build(content);
+        try
+        {
+            return KnowledgeBase.Build(content, lemmatizer);
+        }
+        catch (ArgumentException ex) // ошибка в синонимах, не пойманная проверкой
+        {
+            throw new ContentException($"Ошибка в синонимах: {ex.Message}", ex);
+        }
     }
 
     private static T? Read<T>(string path, bool required) where T : class
