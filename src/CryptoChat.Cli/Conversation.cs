@@ -12,6 +12,14 @@ internal sealed class Conversation
     private readonly ChatDatabase? _db;
     private bool _closed;
 
+    // Для итога беседы в журнале.
+    private int _questions, _unanswered, _helpful, _unhelpful;
+    private readonly List<(string Id, string Title, bool ViaMenu)> _answers = new();
+
+    /// <summary>Итог беседы: те же строки, что пишутся в конец журнала.</summary>
+    public IReadOnlyList<string> SummaryLines => Analytics.SummaryLines(_questions, _answers.Count,
+        _answers.Count(a => a.ViaMenu), _unanswered, _helpful, _unhelpful, _answers.Select(a => (a.Id, a.Title)));
+
     public string? SessionId { get; }
     public ChatDatabase? Database => _db;
 
@@ -52,6 +60,11 @@ internal sealed class Conversation
         engine.FeedbackGiven += feedbackLog.Write;
         if (_db != null)
             engine.FeedbackGiven += entry => _db.Feedback(SessionId, entry);
+        engine.FeedbackGiven += entry =>
+        {
+            if (entry.Helpful) _helpful++;
+            else _unhelpful++;
+        };
     }
 
     public void User(string line)
@@ -66,7 +79,14 @@ internal sealed class Conversation
     {
         _recorder?.Bot(reply);
         _db?.BotMessage(SessionId!, reply);
-        if (!IsDigits(line.Trim())) // номер пункта меню — не вопрос
+        var text = line.Trim();
+        if (reply.Kind == ReplyKind.Answer && reply.Question != null)
+            _answers.Add((reply.Question.Id, reply.Question.Title, IsDigits(text)));
+        if (!IsDigits(text) && !text.StartsWith('/') && reply.Kind is not (ReplyKind.Feedback or ReplyKind.Command or ReplyKind.Exit))
+            _questions++;
+        if (!IsDigits(text) && ChatDatabase.UnansweredKinds.Contains(reply.Kind))
+            _unanswered++;
+        if (!IsDigits(text)) // номер пункта меню — не вопрос
         {
             _log.Write(line, reply.Kind);
             _db?.Unanswered(SessionId, line, reply.Kind);
@@ -78,6 +98,7 @@ internal sealed class Conversation
         if (_closed)
             return;
         _closed = true;
+        _recorder?.Summary(SummaryLines);
         _recorder?.Close();
         if (_db != null)
             _db.FinishSession(SessionId!);

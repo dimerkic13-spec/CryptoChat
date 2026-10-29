@@ -79,6 +79,13 @@ internal sealed class SessionRecorder
         Write($"[{DateTime.Now:HH:mm:ss}] Бот ({reply.Kind}): {body}\n");
     }
 
+    /// <summary>Итог беседы (вопросы, ответы, отзывы) — пишется перед строкой конца сессии.</summary>
+    public void Summary(IEnumerable<string> lines)
+    {
+        if (!_closed)
+            Write("\n" + string.Join("\n", lines) + "\n");
+    }
+
     public void Close()
     {
         if (_closed)
