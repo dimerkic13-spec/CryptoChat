@@ -4,7 +4,7 @@ using CryptoChat.Core;
 namespace CryptoChat.Tests;
 
 /// <summary>
-/// Качество на content/synthetic.json (1900 запросов, по 50 на вопрос). Пороги — чуть ниже достигнутого в 0.2.6a:
+/// Качество на content/synthetic.json (2280 запросов, по 60 на вопрос). Пороги — чуть ниже достигнутого:
 /// если тест упал после правки базы, посмотрите таблицу по вопросам (ключ --synthetic) и верните качество.
 /// </summary>
 public class SyntheticQualityTests
@@ -21,12 +21,12 @@ public class SyntheticQualityTests
     }
 
     [Fact]
-    public void FileHas50QueriesForEveryQuestion()
+    public void FileHas60QueriesForEveryQuestion()
     {
         var cases = Synthetic.Load(ContentDir);
         var ids = ChatEngine.Create(ContentDir, "stemmer", semantic: false).KnowledgeBase.Questions.Select(q => q.Id);
         Assert.Equal(ids.OrderBy(x => x), cases.Keys.OrderBy(x => x));
-        Assert.All(cases.Values, v => Assert.Equal(50, v.Distinct().Count()));
+        Assert.All(cases.Values, v => Assert.Equal(60, v.Distinct().Count()));
     }
 
     [Theory]
