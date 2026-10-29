@@ -490,3 +490,6 @@ secrets.json
 # Модель для поиска по смыслу и выгрузка для настройки
 models/
 semantic_dump.json
+# Временное окружение Python и скачанная исходная модель для tools/export_onnx.py (SEMANTIC_SETUP.md)
+.venv/
+.export-cache/
