@@ -16,6 +16,10 @@ dotnet publish src/CryptoChat.Cli -c Release -r win-x64 --self-contained true `
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish завершился с ошибкой." }
 # Файлы .lib из пакета ONNX Runtime нужны только компилятору C++, программе они не нужны.
 Remove-Item publish\*.lib -ErrorAction SilentlyContinue
+# Путь к базе знаний проекта: при запуске publish\CryptoChat.exe сам подтянет изменения из content
+# в publish\content (ContentSync). На другом компьютере папки проекта нет — файл ни на что не влияет,
+# в установщик он не попадает.
+Set-Content -Path publish\content-source.txt -Value (Resolve-Path content).Path -Encoding UTF8
 
 Write-Host "3/4 Проверка собранной программы..."
 & .\publish\CryptoChat.exe --validate
