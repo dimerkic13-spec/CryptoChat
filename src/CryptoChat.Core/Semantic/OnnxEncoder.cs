@@ -67,8 +67,8 @@ public sealed class OnnxEncoder : IEncoder, IDisposable
     {
         if (!File.Exists(Path.Combine(folder, "model.onnx")))
             throw new SemanticUnavailableException(
-                $"Модель не найдена в {folder}. Выгрузите её из Python-версии скриптом tools/export_onnx.py " +
-                "(см. README, раздел «Поиск по смыслу»).");
+                $"Модель не найдена в {folder}. Скопируйте готовую папку models или выгрузите модель " +
+                "скриптом tools/export_onnx.py — пошагово в SEMANTIC_SETUP.md. В установщике CryptoChat-Setup модель уже есть.");
         try
         {
             var info = ModelInfo.Load(folder);

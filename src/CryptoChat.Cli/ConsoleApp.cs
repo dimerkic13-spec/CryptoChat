@@ -59,6 +59,12 @@ public static class ConsoleApp
                 return SemanticCommands.SemanticDump(contentDir, options.Morphology);
             if (options.TestEmail || options.SendPending)
                 return EmailCommand(contentDir, options);
+            if (options.ShowDataDirectory)
+            {
+                Console.WriteLine($"Папка данных (журналы, база бесед, secrets.json): {DataDirectory()}");
+                return 0;
+            }
+            MigrateOldLogs(AppConfig.Load(contentDir));
             if (options.Stats || options.StatsCsv || options.Sessions || options.Session != null)
                 return Stats(contentDir, options);
 
@@ -126,6 +132,8 @@ public static class ConsoleApp
             : "Поиск по смыслу: выключен" + (engine.SemanticNote != null ? " (недоступен)" : ""));
         if (engine.SessionId != null)
             Console.WriteLine($"Номер сессии: {engine.SessionId}");
+        if (engine.Config.Sessions.Enabled)
+            Console.WriteLine($"Журналы бесед: {SessionsFolder(engine.Config)}");
         Console.WriteLine(new string('=', 60));
         Console.WriteLine("  Помощник КриптоПро");
         Console.WriteLine("  Задайте вопрос обычным текстом. Подсказка: /помощь. Выход: выход");
@@ -255,12 +263,12 @@ public static class ConsoleApp
         {
             if (options.TestEmail)
             {
-                Mailer.SendTest(email, AppDirectory());
+                Mailer.SendTest(email, SecretsDirectory());
                 Console.WriteLine($"Тестовое письмо отправлено на {string.Join(", ", email.Recipients())}.");
             }
             if (options.SendPending)
             {
-                var sent = Mailer.SendPending(email, AppDirectory(), SessionsFolder(config));
+                var sent = Mailer.SendPending(email, SecretsDirectory(), SessionsFolder(config));
                 Console.WriteLine($"Отправлено журналов: {sent}.");
             }
         }
@@ -279,7 +287,7 @@ public static class ConsoleApp
             return;
         try
         {
-            Mailer.SendPending(config.Email, AppDirectory(), SessionsFolder(config), skip,
+            Mailer.SendPending(config.Email, SecretsDirectory(), SessionsFolder(config), skip,
                 onSent: db != null ? db.MarkEmailed : null);
         }
         catch (MailException ex)
@@ -294,8 +302,74 @@ public static class ConsoleApp
     /// <summary>Папка программы: рядом с CryptoChat.exe.</summary>
     internal static string AppDirectory() => AppContext.BaseDirectory;
 
+    public const string DataEnvironmentVariable = "CRYPTOCHAT_DATA";
+
+    /// <summary>
+    /// Папка данных пользователя: журналы бесед, база бесед, отзывы, выгрузки статистики, secrets.json.
+    /// По умолчанию %LocalAppData%\CryptoChat (C:\Users\<имя>\AppData\Local\CryptoChat): туда можно писать
+    /// всегда, даже если программа установлена в защищённую папку, и журналы не пропадают при пересборке
+    /// или обновлении программы. Другую папку можно задать переменной окружения CRYPTOCHAT_DATA.
+    /// </summary>
+    internal static string DataDirectory()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable(DataEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return Path.GetFullPath(fromEnv);
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return string.IsNullOrEmpty(local) ? AppDirectory() : Path.Combine(local, "CryptoChat");
+    }
+
+    /// <summary>Относительные пути из config.json (logs/...) считаются от папки данных, полные — как есть.</summary>
     internal static string LogPath(string path) =>
-        Path.IsPathRooted(path) ? path : Path.Combine(AppDirectory(), path);
+        Path.IsPathRooted(path) ? path : Path.Combine(DataDirectory(), path);
+
+    /// <summary>Где искать secrets.json: в папке данных, а если там нет — рядом с программой (как до 0.3.0a).</summary>
+    internal static string SecretsDirectory()
+    {
+        var data = DataDirectory();
+        return !File.Exists(Path.Combine(data, Mailer.SecretsFile)) && File.Exists(Path.Combine(AppDirectory(), Mailer.SecretsFile))
+            ? AppDirectory()
+            : data;
+    }
+
+    /// <summary>
+    /// До 0.3.0a журналы лежали в папке logs рядом с программой. Если в папке данных журналов ещё нет,
+    /// а рядом с программой есть, — один раз копируем их, чтобы статистика не потерялась.
+    /// Возвращает сообщение для пользователя или null, если переносить нечего.
+    /// </summary>
+    internal static string? MigrateOldLogs(string appDir, string dataDir)
+    {
+        var oldLogs = Path.Combine(appDir, "logs");
+        var newLogs = Path.Combine(dataDir, "logs");
+        if (Path.GetFullPath(oldLogs).TrimEnd(Path.DirectorySeparatorChar) ==
+            Path.GetFullPath(newLogs).TrimEnd(Path.DirectorySeparatorChar)
+            || !Directory.Exists(oldLogs) || Directory.Exists(newLogs))
+            return null;
+        try
+        {
+            foreach (var file in Directory.GetFiles(oldLogs, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(newLogs, Path.GetRelativePath(oldLogs, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target, overwrite: false);
+            }
+            return $"Журналы прошлых версий скопированы из {oldLogs} в {newLogs}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"Не удалось скопировать старые журналы из {oldLogs}: {ex.Message}";
+        }
+    }
+
+    private static void MigrateOldLogs(AppConfig config)
+    {
+        // Переносить имеет смысл, только если журналы лежат в папке данных по относительным путям (как по умолчанию).
+        if (Path.IsPathRooted(config.Sessions.Path) && Path.IsPathRooted(config.Database.Path))
+            return;
+        var message = MigrateOldLogs(AppDirectory(), DataDirectory());
+        if (message != null)
+            Console.WriteLine(message);
+    }
 
     internal static string SessionsFolder(AppConfig config) => LogPath(config.Sessions.Path);
 
@@ -349,6 +423,7 @@ public static class ConsoleApp
         Console.WriteLine("  --top <N>          сколько вопросов показывать в топах (по умолчанию 10)");
         Console.WriteLine("  --stats-csv [папка] выгрузить статистику в CSV для Excel (по умолчанию logs/stats-<дата>)");
         Console.WriteLine("  --sessions         список последних бесед; --session <номер> — итог и переписка одной беседы");
+        Console.WriteLine("  --data-dir         показать папку данных: журналы, база бесед, secrets.json");
         Console.WriteLine("  --version          показать версию");
         Console.WriteLine("  --help             эта подсказка");
     }
