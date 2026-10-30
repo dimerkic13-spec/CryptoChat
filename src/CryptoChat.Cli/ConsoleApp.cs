@@ -42,6 +42,15 @@ public static class ConsoleApp
             return 0;
         }
 
+        // Собранная программа (publish) подтягивает изменённую базу знаний из папки проекта — см. ContentSync.
+        if (string.IsNullOrWhiteSpace(options.ContentPath)
+            && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CRYPTOCHAT_CONTENT")))
+        {
+            var sync = ContentSync.Run(AppDirectory());
+            if (sync.Message != null)
+                Console.WriteLine(sync.Message);
+        }
+
         var contentDir = ResolveContentDirectory(options);
         try
         {

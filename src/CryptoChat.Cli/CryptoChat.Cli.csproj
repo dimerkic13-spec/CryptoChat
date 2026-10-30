@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>CryptoChat</AssemblyName>
     <RootNamespace>CryptoChat.Cli</RootNamespace>
-    <Version>0.3.0</Version>
-    <InformationalVersion>0.3.0a</InformationalVersion>
+    <Version>0.3.1</Version>
+    <InformationalVersion>0.3.1a</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
