@@ -493,3 +493,5 @@ semantic_dump.json
 # Временное окружение Python и скачанная исходная модель для tools/export_onnx.py (SEMANTIC_SETUP.md)
 .venv/
 .export-cache/
+# Собранный установщик (build_installer.ps1)
+dist/

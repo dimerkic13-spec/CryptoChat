@@ -27,7 +27,7 @@ internal interface IMailTransport
 ///
 /// Пароль ящика-отправителя НЕ хранится в config.json (он попадает в Git). Он берётся:
 ///   1) из переменной окружения, имя которой задано в email.passwordEnv (по умолчанию CRYPTOCHAT_SMTP_PASSWORD);
-///   2) иначе из файла secrets.json рядом с программой: { "smtpPassword": "..." }.
+///   2) иначе из файла secrets.json в папке данных (--data-dir) или рядом с программой: { "smtpPassword": "..." }.
 /// Файл secrets.json исключён из Git (.gitignore).
 /// </summary>
 internal static class Mailer

@@ -22,6 +22,7 @@ internal sealed class Options
     public bool StatsCsv { get; private set; }
     public string? StatsCsvFolder { get; private set; }
     public bool Sessions { get; private set; }
+    public bool ShowDataDirectory { get; private set; }
     public string? Session { get; private set; }
     public DateOnly? From { get; private set; }
     public DateOnly? To { get; private set; }
@@ -67,6 +68,7 @@ internal sealed class Options
                         options.StatsCsvFolder = args[++i];
                     break;
                 case "--sessions": options.Sessions = true; break;
+                case "--data-dir": options.ShowDataDirectory = true; break;
                 case "--session":
                     if (i + 1 >= args.Length)
                         options.Error = "После --session нужно указать номер сессии (список: --sessions).";
